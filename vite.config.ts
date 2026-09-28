@@ -7,72 +7,111 @@ import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { publicPlatformScript } from "./server/_core/publicConfig";
 
 // =============================================================================
-// Manus Debug Collector - Vite Plugin
-// Writes browser logs directly to files, trimmed when exceeding size limit
+// Manus Debug Collector - Vite Plugin (async, batched writer + rotation)
+// - Batches incoming browser logs in memory and flushes periodically (non-blocking)
+// - Rotates files when size exceeds MAX_LOG_SIZE_BYTES
+// - Safer for dev server: reduces sync I/O and prevents blocking the event loop
 // =============================================================================
 
 const PROJECT_ROOT = import.meta.dirname;
 const LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB per log file
-const TRIM_TARGET_BYTES = Math.floor(MAX_LOG_SIZE_BYTES * 0.6); // Trim to 60% to avoid constant re-trimming
+const FLUSH_INTERVAL_MS = 250; // flush queued logs every 250ms
+const LOG_ROTATE_COUNT = 3; // keep rotated files .1 .. .3
 
 type LogSource = "browserConsole" | "networkRequests" | "sessionReplay";
 
-function ensureLogDir() {
-  if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-  }
-}
-
-function trimLogFile(logPath: string, maxSize: number) {
+async function ensureLogDirAsync() {
   try {
-    if (!fs.existsSync(logPath) || fs.statSync(logPath).size <= maxSize) {
-      return;
-    }
-
-    const lines = fs.readFileSync(logPath, "utf-8").split("\n");
-    const keptLines: string[] = [];
-    let keptBytes = 0;
-
-    // Keep newest lines (from end) that fit within 60% of maxSize
-    const targetSize = TRIM_TARGET_BYTES;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const lineBytes = Buffer.byteLength(`${lines[i]}\n`, "utf-8");
-      if (keptBytes + lineBytes > targetSize) break;
-      keptLines.unshift(lines[i]);
-      keptBytes += lineBytes;
-    }
-
-    fs.writeFileSync(logPath, keptLines.join("\n"), "utf-8");
+    await fs.promises.mkdir(LOG_DIR, { recursive: true });
   } catch {
-    /* ignore trim errors */
+    // ignore
   }
 }
 
-function writeToLogFile(source: LogSource, entries: unknown[]) {
-  if (entries.length === 0) return;
+async function rotateIfNeeded(logPath: string) {
+  try {
+    const stat = await fs.promises.stat(logPath).catch(() => null);
+    if (!stat) return;
+    if (stat.size <= MAX_LOG_SIZE_BYTES) return;
 
-  ensureLogDir();
-  const logPath = path.join(LOG_DIR, `${source}.log`);
-
-  // Format entries with timestamps
-  const lines = entries.map((entry) => {
-    const ts = new Date().toISOString();
-    return `[${ts}] ${JSON.stringify(entry)}`;
-  });
-
-  // Append to log file
-  fs.appendFileSync(logPath, `${lines.join("\n")}\n`, "utf-8");
-
-  // Trim if exceeds max size
-  trimLogFile(logPath, MAX_LOG_SIZE_BYTES);
+    // rotate files: log -> log.1, log.1 -> log.2, etc.
+    for (let i = LOG_ROTATE_COUNT - 1; i >= 0; i--) {
+      const from = i === 0 ? logPath : `${logPath}.${i}`;
+      const to = `${logPath}.${i + 1}`;
+      try {
+        await fs.promises.rename(from, to);
+      } catch {
+        // ignore missing files
+      }
+    }
+  } catch {
+    // ignore rotation errors in dev
+  }
 }
+
+// In-memory buffers for each source. Fast, synchronous push for incoming requests.
+const buffers: Record<LogSource, string[]> = {
+  browserConsole: [],
+  networkRequests: [],
+  sessionReplay: [],
+};
+let flushing = false;
+
+function enqueueLogLines(source: LogSource, entries: unknown[]) {
+  if (!entries || entries.length === 0) return;
+  const lines = entries.map((entry) => `[${new Date().toISOString()}] ${JSON.stringify(entry)}`);
+  buffers[source].push(...lines);
+}
+
+async function flushBuffersOnce() {
+  if (flushing) return;
+  flushing = true;
+  try {
+    await ensureLogDirAsync();
+    const sources: LogSource[] = ["browserConsole", "networkRequests", "sessionReplay"];
+    for (const source of sources) {
+      const queued = buffers[source].splice(0, buffers[source].length);
+      if (queued.length === 0) continue;
+
+      const logPath = path.join(LOG_DIR, `${source}.log`);
+      const data = queued.join("\n") + "\n";
+      const dataBytes = Buffer.byteLength(data, "utf-8");
+
+      try {
+        // Check current size and rotate if appending would exceed limit
+        const stat = await fs.promises.stat(logPath).catch(() => null);
+        if (stat && stat.size + dataBytes > MAX_LOG_SIZE_BYTES) {
+          await rotateIfNeeded(logPath);
+        }
+
+        // Append data (async)
+        await fs.promises.appendFile(logPath, data, "utf-8");
+
+        // Post-append safety: if file grew beyond limit, rotate
+        const newStat = await fs.promises.stat(logPath).catch(() => null);
+        if (newStat && newStat.size > MAX_LOG_SIZE_BYTES) {
+          await rotateIfNeeded(logPath);
+        }
+      } catch (e) {
+        // If append fails, requeue lines to avoid data loss during transient errors
+        buffers[source].unshift(...queued);
+      }
+    }
+  } finally {
+    flushing = false;
+  }
+}
+
+// Periodic flush timer (dev-only, lightweight)
+const flushTimer = setInterval(() => {
+  // fire and forget
+  flushBuffersOnce().catch(() => undefined);
+}, FLUSH_INTERVAL_MS);
 
 /**
  * Vite plugin to collect browser debug logs
- * - POST /__manus__/logs: Browser sends logs, written directly to files
- * - Files: browserConsole.log, networkRequests.log, sessionReplay.log
- * - Auto-trimmed when exceeding 1MB (keeps newest entries)
+ * - POST /__manus__/logs: Browser sends logs, written to in-memory queue then flushed async
  */
 function vitePluginManusDebugCollector(): Plugin {
   return {
@@ -97,7 +136,7 @@ function vitePluginManusDebugCollector(): Plugin {
     },
 
     configureServer(server: ViteDevServer) {
-      // POST /__manus__/logs: Browser sends logs (written directly to files)
+      // POST /__manus__/logs: Browser sends logs (queued in memory and flushed async)
       server.middlewares.use("/__manus__/logs", (req, res, next) => {
         if (req.method !== "POST") {
           return next();
@@ -107,22 +146,24 @@ function vitePluginManusDebugCollector(): Plugin {
         const MAX_PAYLOAD_BYTES = 1 * 1024 * 1024; // 1MB
 
         const handlePayload = (payload: any) => {
-          // Write logs directly to files
-          if (payload.consoleLogs?.length > 0) {
-            writeToLogFile("browserConsole", payload.consoleLogs);
+          try {
+            if (payload.consoleLogs?.length > 0) {
+              enqueueLogLines("browserConsole", payload.consoleLogs);
+            }
+            if (payload.networkRequests?.length > 0) {
+              enqueueLogLines("networkRequests", payload.networkRequests);
+            }
+            if (payload.sessionEvents?.length > 0) {
+              enqueueLogLines("sessionReplay", payload.sessionEvents);
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: true }));
+          } catch (e) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: String(e) }));
           }
-          if (payload.networkRequests?.length > 0) {
-            writeToLogFile("networkRequests", payload.networkRequests);
-          }
-          if (payload.sessionEvents?.length > 0) {
-            writeToLogFile("sessionReplay", payload.sessionEvents);
-          }
-
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ success: true }));
         };
 
-        // If body was already parsed by another middleware, handle it (best-effort)
         const reqBody = (req as { body?: unknown }).body;
         if (reqBody && typeof reqBody === "object") {
           try {
@@ -144,12 +185,10 @@ function vitePluginManusDebugCollector(): Plugin {
           received += chunk.length;
           if (received > MAX_PAYLOAD_BYTES) {
             closed = true;
-            // Respond with 413 Payload Too Large and destroy the request to free resources
             try {
               res.writeHead(413, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ success: false, error: "Payload too large" }));
             } catch {}
-            // Destroy the incoming request socket if possible
             try {
               (req as any).destroy?.();
             } catch {}
@@ -166,8 +205,10 @@ function vitePluginManusDebugCollector(): Plugin {
             const payload = JSON.parse(body);
             handlePayload(payload);
           } catch (e) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: false, error: String(e) }));
+            try {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ success: false, error: String(e) }));
+            } catch {}
           }
         };
 
@@ -188,9 +229,6 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-// Static development and static publishing use the same public-value whitelist
-// as Express. Runtime-only secrets never enter the browser bundle. Express keeps
-// serving this path dynamically when the application server is selected.
 function vitePluginPublicPlatformConfig(): Plugin {
   return {
     name: "manus-public-platform-config",
