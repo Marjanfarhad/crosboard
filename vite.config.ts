@@ -103,6 +103,9 @@ function vitePluginManusDebugCollector(): Plugin {
           return next();
         }
 
+        // Protect the dev server from overly large payloads
+        const MAX_PAYLOAD_BYTES = 1 * 1024 * 1024; // 1MB
+
         const handlePayload = (payload: any) => {
           // Write logs directly to files
           if (payload.consoleLogs?.length > 0) {
@@ -119,6 +122,7 @@ function vitePluginManusDebugCollector(): Plugin {
           res.end(JSON.stringify({ success: true }));
         };
 
+        // If body was already parsed by another middleware, handle it (best-effort)
         const reqBody = (req as { body?: unknown }).body;
         if (reqBody && typeof reqBody === "object") {
           try {
@@ -130,12 +134,34 @@ function vitePluginManusDebugCollector(): Plugin {
           return;
         }
 
-        let body = "";
-        req.on("data", (chunk) => {
-          body += chunk.toString();
-        });
+        // Stream and enforce size limit
+        let received = 0;
+        const chunks: Buffer[] = [];
+        let closed = false;
 
-        req.on("end", () => {
+        const onData = (chunk: Buffer) => {
+          if (closed) return;
+          received += chunk.length;
+          if (received > MAX_PAYLOAD_BYTES) {
+            closed = true;
+            // Respond with 413 Payload Too Large and destroy the request to free resources
+            try {
+              res.writeHead(413, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ success: false, error: "Payload too large" }));
+            } catch {}
+            // Destroy the incoming request socket if possible
+            try {
+              (req as any).destroy?.();
+            } catch {}
+            return;
+          }
+          chunks.push(Buffer.from(chunk));
+        };
+
+        const onEnd = () => {
+          if (closed) return;
+          closed = true;
+          const body = Buffer.concat(chunks).toString();
           try {
             const payload = JSON.parse(body);
             handlePayload(payload);
@@ -143,7 +169,20 @@ function vitePluginManusDebugCollector(): Plugin {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ success: false, error: String(e) }));
           }
-        });
+        };
+
+        const onError = () => {
+          if (closed) return;
+          closed = true;
+          try {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "Request error" }));
+          } catch {}
+        };
+
+        req.on("data", onData);
+        req.on("end", onEnd);
+        req.on("error", onError);
       });
     },
   };
