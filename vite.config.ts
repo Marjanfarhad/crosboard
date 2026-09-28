@@ -11,13 +11,26 @@ import { publicPlatformScript } from "./server/_core/publicConfig";
 // - Batches incoming browser logs in memory and flushes periodically (non-blocking)
 // - Rotates files when size exceeds MAX_LOG_SIZE_BYTES
 // - Safer for dev server: reduces sync I/O and prevents blocking the event loop
+//
+// Configuration via environment variables (all optional):
+// MANUS_LOG_MAX_BYTES (number, bytes) - default 1_048_576 (1MB)
+// MANUS_LOG_FLUSH_INTERVAL_MS (number, ms) - default 250
+// MANUS_LOG_ROTATE_COUNT (number, count) - default 3
+// MANUS_LOG_MAX_PAYLOAD_BYTES (number, bytes) - default 1_048_576 (1MB)
 // =============================================================================
 
 const PROJECT_ROOT = import.meta.dirname;
 const LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
-const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB per log file
-const FLUSH_INTERVAL_MS = 250; // flush queued logs every 250ms
-const LOG_ROTATE_COUNT = 3; // keep rotated files .1 .. .3
+
+function envInt(name: string, fallback: number) {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && !Number.isNaN(v) && v > 0 ? Math.floor(v) : fallback;
+}
+
+const MAX_LOG_SIZE_BYTES = envInt("MANUS_LOG_MAX_BYTES", 1 * 1024 * 1024); // 1MB per log file
+const FLUSH_INTERVAL_MS = envInt("MANUS_LOG_FLUSH_INTERVAL_MS", 250); // flush queued logs every 250ms
+const LOG_ROTATE_COUNT = envInt("MANUS_LOG_ROTATE_COUNT", 3); // keep rotated files .1 .. .3
+const MAX_PAYLOAD_BYTES = envInt("MANUS_LOG_MAX_PAYLOAD_BYTES", 1 * 1024 * 1024); // 1MB max incoming payload
 
 type LogSource = "browserConsole" | "networkRequests" | "sessionReplay";
 
@@ -141,9 +154,6 @@ function vitePluginManusDebugCollector(): Plugin {
         if (req.method !== "POST") {
           return next();
         }
-
-        // Protect the dev server from overly large payloads
-        const MAX_PAYLOAD_BYTES = 1 * 1024 * 1024; // 1MB
 
         const handlePayload = (payload: any) => {
           try {
