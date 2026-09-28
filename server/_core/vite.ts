@@ -21,23 +21,72 @@ export async function setupVite(app: Express, server: Server) {
   });
 
   app.use(vite.middlewares);
+
+  const clientTemplate = path.resolve(
+    import.meta.dirname,
+    "../..",
+    "client",
+    "index.html"
+  );
+
+  // Cache the index.html template in memory and only re-read when the file changes.
+  // This reduces disk I/O for every request while still reflecting dev edits.
+  let cachedTemplate: string | null = null;
+  let templateVersion = "";
+  let loadingTemplate: Promise<void> | null = null;
+
+  async function loadTemplate() {
+    // Prevent concurrent loads
+    if (loadingTemplate) return loadingTemplate;
+    loadingTemplate = (async () => {
+      try {
+        const stat = await fs.promises.stat(clientTemplate).catch(() => null);
+        const t = await fs.promises.readFile(clientTemplate, "utf-8");
+        cachedTemplate = t;
+        templateVersion = String(stat?.mtimeMs ?? Date.now());
+      } finally {
+        loadingTemplate = null;
+      }
+    })();
+    return loadingTemplate;
+  }
+
+  // Initial load
+  await loadTemplate().catch(() => {
+    // ignore errors here; we'll fallback to reading from disk per request
+    cachedTemplate = null;
+    templateVersion = String(Date.now());
+  });
+
+  // Watch for changes and reload the cached template.
+  try {
+    const watcher = fs.watch(clientTemplate, { persistent: false }, (eventType) => {
+      if (eventType === "change" || eventType === "rename") {
+        // schedule reload, ignore errors
+        loadTemplate().catch(() => undefined);
+      }
+    });
+    // If the watcher errors, ignore — we'll fallback to on-demand reads.
+    watcher.on("error", () => {});
+  } catch {
+    // Ignore watch creation errors (platform restrictions)
+  }
+
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
     try {
-      const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "../..",
-        "client",
-        "index.html"
+      // Use cached template when available; otherwise read from disk.
+      if (!cachedTemplate) {
+        await loadTemplate();
+      }
+
+      // Make a local copy to inject a stable cache-busting version based on file mtime
+      const template = (cachedTemplate ?? (await fs.promises.readFile(clientTemplate, "utf-8"))).replace(
+        `src="/src/main.tsx"`,
+        `src="/src/main.tsx?v=${templateVersion || nanoid()}"`
       );
 
-      // always reload the index.html file from disk incase it changes
-      let template = await fs.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`
-      );
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
