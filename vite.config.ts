@@ -27,10 +27,16 @@ function envInt(name: string, fallback: number) {
   return Number.isFinite(v) && !Number.isNaN(v) && v > 0 ? Math.floor(v) : fallback;
 }
 
-const MAX_LOG_SIZE_BYTES = envInt("MANUS_LOG_MAX_BYTES", 1 * 1024 * 1024); // 1MB per log file
-const FLUSH_INTERVAL_MS = envInt("MANUS_LOG_FLUSH_INTERVAL_MS", 250); // flush queued logs every 250ms
-const LOG_ROTATE_COUNT = envInt("MANUS_LOG_ROTATE_COUNT", 3); // keep rotated files .1 .. .3
-const MAX_PAYLOAD_BYTES = envInt("MANUS_LOG_MAX_PAYLOAD_BYTES", 1 * 1024 * 1024); // 1MB max incoming payload
+let MAX_LOG_SIZE_BYTES = envInt("MANUS_LOG_MAX_BYTES", 1 * 1024 * 1024); // 1MB per log file
+let FLUSH_INTERVAL_MS = envInt("MANUS_LOG_FLUSH_INTERVAL_MS", 250); // flush queued logs every 250ms
+let LOG_ROTATE_COUNT = envInt("MANUS_LOG_ROTATE_COUNT", 3); // keep rotated files .1 .. .3
+let MAX_PAYLOAD_BYTES = envInt("MANUS_LOG_MAX_PAYLOAD_BYTES", 1 * 1024 * 1024); // 1MB max incoming payload
+
+// allow hot-reload of env-driven values in dev if needed (not required, but safe)
+if (process.env.MANUS_LOG_MAX_BYTES) MAX_LOG_SIZE_BYTES = envInt("MANUS_LOG_MAX_BYTES", MAX_LOG_SIZE_BYTES);
+if (process.env.MANUS_LOG_FLUSH_INTERVAL_MS) FLUSH_INTERVAL_MS = envInt("MANUS_LOG_FLUSH_INTERVAL_MS", FLUSH_INTERVAL_MS);
+if (process.env.MANUS_LOG_ROTATE_COUNT) LOG_ROTATE_COUNT = envInt("MANUS_LOG_ROTATE_COUNT", LOG_ROTATE_COUNT);
+if (process.env.MANUS_LOG_MAX_PAYLOAD_BYTES) MAX_PAYLOAD_BYTES = envInt("MANUS_LOG_MAX_PAYLOAD_BYTES", MAX_PAYLOAD_BYTES);
 
 type LogSource = "browserConsole" | "networkRequests" | "sessionReplay";
 
@@ -117,10 +123,15 @@ async function flushBuffersOnce() {
 }
 
 // Periodic flush timer (dev-only, lightweight)
-const flushTimer = setInterval(() => {
-  // fire and forget
-  flushBuffersOnce().catch(() => undefined);
-}, FLUSH_INTERVAL_MS);
+let flushTimer: NodeJS.Timeout | null = null;
+function startFlushTimer() {
+  if (flushTimer) return;
+  flushTimer = setInterval(() => {
+    // fire and forget
+    flushBuffersOnce().catch(() => undefined);
+  }, FLUSH_INTERVAL_MS);
+}
+startFlushTimer();
 
 /**
  * Vite plugin to collect browser debug logs
@@ -291,3 +302,35 @@ export default defineConfig({
     },
   },
 });
+
+// Graceful shutdown: flush buffers on SIGINT/SIGTERM/beforeExit
+let shuttingDown = false;
+async function flushAndExit(signal?: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    console.log(`manus-logs: received ${signal ?? "shutdown"} - flushing log buffers...`);
+    if (flushTimer) {
+      clearInterval(flushTimer);
+      flushTimer = null;
+    }
+    // attempt to flush remaining buffers
+    await flushBuffersOnce();
+    console.log("manus-logs: flush complete");
+  } catch (e) {
+    console.error("manus-logs: error while flushing buffers:", e);
+  } finally {
+    // give a short grace period then exit
+    setTimeout(() => {
+      try {
+        process.exit(0);
+      } catch {
+        /* ignore */
+      }
+    }, 500);
+  }
+}
+
+process.once("SIGINT", () => flushAndExit("SIGINT"));
+process.once("SIGTERM", () => flushAndExit("SIGTERM"));
+process.once("beforeExit", () => flushAndExit("beforeExit"));
