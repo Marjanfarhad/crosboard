@@ -1,0 +1,48 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/api/health",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {
+      "name": "MANUS_JWT_SECRET",
+      "description": "Secret used to sign/verify session JWT cookies (jose). A dev placeholder is in .env.base44-defaults; replace with a real value for production.",
+      "requiredAtBoot": false,
+      "generatedForDevelopment": true
+    },
+    {
+      "name": "MANUS_OAUTH_API_URL",
+      "description": "Manus platform OAuth API base URL (for token exchange / user info). Obtain from the Manus platform dashboard.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "MANUS_PROJECT_ID",
+      "description": "Manus project/app ID used for OAuth login flow. Obtain from the Manus platform dashboard.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "MANUS_OAUTH_PORTAL_URL",
+      "description": "Manus OAuth portal URL (where the browser is redirected to log in). Obtain from the Manus platform dashboard.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "MANUS_API_URL",
+      "description": "Manus Forge API base URL (storage, data API, heartbeat, LLM, etc.). Obtain from the Manus platform dashboard.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "MANUS_API_KEY",
+      "description": "Manus Forge API key (server-side, bearer token). Obtain from the Manus platform dashboard.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "MANUS_API_BROWSER_KEY",
+      "description": "Manus Forge browser API key (exposed to the client for public API calls). Obtain from the Manus platform dashboard.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "OWNER_OPEN_ID",
+      "description": "Optional: the owner's Manus openId — automatically assigned the 'admin' role on login.",
+      "requiredAtBoot": false
+    }
+  ]
+}

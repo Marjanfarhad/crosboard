@@ -1,0 +1,57 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: on-failure
+    environment:
+      MYSQL_ROOT_PASSWORD: crosrootpw
+      MYSQL_DATABASE: crosboard
+      MYSQL_USER: crosboard
+      MYSQL_PASSWORD: crospw
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pcrosrootpw"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  app:
+    image: node:22-bookworm-slim
+    restart: on-failure
+    working_dir: /app
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      DATABASE_URL: mysql://crosboard:crospw@db:3306/crosboard
+      BASE44_PUBLIC_HOST_SUFFIX: ${BASE44_PUBLIC_HOST_SUFFIX:-}
+      BASE44_SANDBOX_HOST_DOMAIN: ${BASE44_SANDBOX_HOST_DOMAIN:-}
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    command:
+      - sh
+      - -ec
+      - |
+        corepack enable && corepack prepare pnpm@10.18.0 --activate
+        CI=true pnpm install --frozen-lockfile
+        pnpm db:migrate || true
+        exec pnpm dev
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  db-data:
+  node_modules:
