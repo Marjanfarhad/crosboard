@@ -50,6 +50,10 @@ pids
 coverage/
 *.lcov
 
+# Playwright runtime output (visual baselines are committed under e2e/)
+test-results/
+playwright-report/
+
 # nyc test coverage
 .nyc_output
 
