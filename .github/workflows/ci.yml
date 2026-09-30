@@ -32,10 +32,14 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
       - name: Typecheck
         run: pnpm check
       - name: Run automated tests
         run: pnpm test
+      - name: Run Playwright end-to-end tests
+        run: pnpm test:e2e
       - name: Build static site
         run: pnpm build:static
       - name: Verify static build artifact
