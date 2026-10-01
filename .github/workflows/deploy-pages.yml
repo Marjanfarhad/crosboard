@@ -52,6 +52,27 @@ jobs:
         run: pnpm build:static
       - name: Verify static build artifact
         run: pnpm verify:static
+      - name: Start static preview server
+        run: |
+          PORT=4173 pnpm preview:static > /tmp/crosboard-preview.log 2>&1 &
+          echo $! > /tmp/crosboard-preview.pid
+      - name: Wait for static preview server
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4173/crosboard/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/crosboard-preview.log
+          exit 1
+      - name: Run Lighthouse audit
+        run: pnpm audit:lighthouse
+      - name: Upload Lighthouse reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports-pages-${{ github.run_id }}
+          path: artifacts/lighthouse/
+          if-no-files-found: error
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

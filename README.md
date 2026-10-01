@@ -21,12 +21,14 @@ Useful commands:
 
 - `pnpm dev`: development server; honors `PORT` (default 3000).
 - `pnpm dev:static`: static Vite preview server for the frontend.
+- `pnpm preview:static`: serve the built static bundle locally, matching CI and GitHub Pages output.
 - `pnpm build`: build the frontend and production server.
 - `pnpm build:static`: build the static GitHub Pages bundle.
 - `pnpm start`: serve the production build from `dist/`.
 - `pnpm check`: run TypeScript diagnostics.
 - `pnpm test`: run the Vitest test suite once.
 - `pnpm test:e2e`: run Playwright interaction and visual regression tests.
+- `pnpm audit:lighthouse`: run Lighthouse performance, accessibility, best-practices, and SEO audits against the local preview.
 - `pnpm verify:static`: verify the expected static build artifacts exist.
 - `pnpm db:migrate`: apply checked-in migrations.
 - `pnpm db:push`: generate and apply new schema changes.
@@ -38,8 +40,11 @@ Every push to `main` and every pull request targeting `main` runs [CI](.github/w
 1. Installs dependencies with the locked pnpm version.
 2. Runs TypeScript typechecking.
 3. Runs the automated Vitest test suite.
-4. Builds the static site.
-5. Verifies that the expected Pages artifacts exist.
+4. Runs Playwright interaction, visual regression, and performance-budget tests.
+5. Builds the static site and verifies the expected Pages artifacts exist.
+6. Runs Lighthouse audits with minimum scores of 80 performance, 90 accessibility, 90 best practices, and 90 SEO.
+
+Lighthouse JSON and HTML reports are uploaded as workflow artifacts for every CI and deployment run.
 
 Every push to `main` also runs the [GitHub Pages deployment workflow](.github/workflows/deploy-pages.yml). Deployment is gated by the same typecheck, test, and build checks before the artifact is published.
 

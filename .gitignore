@@ -54,6 +54,9 @@ coverage/
 test-results/
 playwright-report/
 
+# Lighthouse reports are uploaded by CI rather than committed
+artifacts/lighthouse/
+
 # nyc test coverage
 .nyc_output
 
