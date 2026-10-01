@@ -26,6 +26,8 @@ Useful commands:
 - `pnpm start`: serve the production build from `dist/`.
 - `pnpm check`: run TypeScript diagnostics.
 - `pnpm test`: run the Vitest test suite once.
+- `pnpm test:e2e`: run Playwright interaction and visual regression tests.
+- `pnpm verify:static`: verify the expected static build artifacts exist.
 - `pnpm db:migrate`: apply checked-in migrations.
 - `pnpm db:push`: generate and apply new schema changes.
 

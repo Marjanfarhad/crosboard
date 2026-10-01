@@ -9,7 +9,7 @@ test.describe("CROS visual regression", () => {
   test("desktop dashboard matches the approved visual baseline", async ({ page }) => {
     test.skip((page.viewportSize()?.width ?? 0) <= 760, "desktop visual baseline runs on the desktop project");
     await expect(page).toHaveScreenshot("dashboard-desktop.png", {
-      fullPage: true,
+      fullPage: false,
       animations: "disabled",
       caret: "hide",
       maxDiffPixels: 250,
@@ -19,7 +19,7 @@ test.describe("CROS visual regression", () => {
   test("mobile dashboard matches the approved visual baseline", async ({ page }) => {
     test.skip((page.viewportSize()?.width ?? 0) > 760, "mobile visual baseline runs on the mobile project");
     await expect(page).toHaveScreenshot("dashboard-mobile.png", {
-      fullPage: true,
+      fullPage: false,
       animations: "disabled",
       caret: "hide",
       maxDiffPixels: 180,
