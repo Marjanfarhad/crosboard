@@ -12,7 +12,7 @@ test.describe("CROS visual regression", () => {
       fullPage: false,
       animations: "disabled",
       caret: "hide",
-      maxDiffPixels: 250,
+      maxDiffPixelRatio: 0.01,
     });
   });
 
