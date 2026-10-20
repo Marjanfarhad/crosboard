@@ -1,0 +1,94 @@
+# Base44 dev environment for CROS (Creator Revenue OS).
+#
+# Structure of the project (see README.md): one Express server that serves the
+# React client through Vite middleware (`pnpm dev` -> tsx watch), Drizzle ORM
+# on MySQL. So this stack is a single application service plus its database:
+#
+#   db      - MySQL 8.4, local infrastructure with credentials generated here
+#   migrate - one-shot `pnpm db:migrate` (drizzle-kit), runs before app starts
+#   app     - the dev server on host port 3000 (the preview entry point)
+#
+# Dependencies are installed at container startup from the checked-in lockfile
+# into a named volume, so the bind-mounted repository stays writable and edits
+# are picked up by the watcher without rebuilding images.
+name: crosboard
+
+services:
+  db:
+    image: mysql:8.4
+    restart: on-failure
+    environment:
+      MYSQL_ROOT_PASSWORD: crosboard-root
+      MYSQL_DATABASE: crosboard
+      MYSQL_USER: crosboard
+      MYSQL_PASSWORD: crosboard
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u crosboard -pcrosboard --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Applies drizzle/migrations. Exits once done; app waits for it to succeed.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.base44
+    image: crosboard-node:base44
+    working_dir: /app
+    environment:
+      DATABASE_URL: mysql://crosboard:crosboard@db:3306/crosboard
+      npm_config_store_dir: /pnpm-store
+    volumes:
+      - .:/app
+      - pnpm-store:/pnpm-store
+      - node-modules:/app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-ec", "pnpm install --frozen-lockfile && pnpm db:migrate"]
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.base44
+    image: crosboard-node:base44
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: mysql://crosboard:crosboard@db:3306/crosboard
+      PORT: "3000"
+      npm_config_store_dir: /pnpm-store
+      BASE44_PREVIEW_MODE: "${BASE44_PREVIEW_MODE:-}"
+    volumes:
+      - .:/app
+      - pnpm-store:/pnpm-store
+      - node-modules:/app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # `pnpm dev` = `NODE_ENV=development tsx watch server/_core/index.ts`, which
+    # serves the client through Vite middleware and reloads on source changes.
+    command: ["sh", "-ec", "pnpm install --frozen-lockfile && exec pnpm dev"]
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    restart: on-failure
+
+volumes:
+  mysql-data:
+  pnpm-store:
+  node-modules:
