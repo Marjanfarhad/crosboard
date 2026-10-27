@@ -53,7 +53,6 @@ jobs:
   pages-build:
     name: Pages build & Lighthouse
     needs: fast-check
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -123,7 +122,6 @@ jobs:
   e2e:
     name: Playwright end-to-end tests
     needs: fast-check
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
