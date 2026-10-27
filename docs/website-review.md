@@ -40,3 +40,7 @@ The candidate is committed locally. A push to the separate review branch was att
 The full frontend and server bundles build, TypeScript checks pass, and static artifact verification passes. Browser checks remain blocked, so all new UI behavior and performance budgets remain unverified. This is a review candidate, not a release-ready build. Keep the old screenshot baselines until actual browser screenshots can be inspected.
 
 The owner subsequently authorized sending only the review branch and opening a draft PR. Merge and site publication remain prohibited. CI validation may proceed on that review branch.
+
+## First review-branch CI run
+
+Run 40596274602 passed typechecking, all 9 unit/server tests, and 20 browser cases including the desktop performance-budget check. Four viewport-inapplicable cases were skipped. The chart-range assertions failed because the accessible table introduced a second text match, not because the totals differed. Those assertions now target the chart summary explicitly. Desktop and mobile screenshot comparisons correctly flagged the intentional banner/copy changes. The exact CI captures were visually inspected and accepted as candidate regression references; this is not owner release approval. The review CI now also runs the existing static build/Lighthouse job on PRs. No deployment job is added or changed. A fresh run must confirm the fixes.

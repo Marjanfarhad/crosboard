@@ -40,13 +40,13 @@ test.describe("CROS dashboard", () => {
 
   test("switches revenue chart ranges", async ({ page }) => {
     const chart = page.locator(".chart-panel");
-    await expect(chart.getByText("$9,170")).toBeVisible();
+    await expect(chart.locator(".chart-summary strong")).toHaveText("$9,170");
 
     await chart.getByRole("button", { name: "30D" }).click();
-    await expect(chart.getByText("$40,150")).toBeVisible();
+    await expect(chart.locator(".chart-summary strong")).toHaveText("$40,150");
 
     await chart.getByRole("button", { name: "MTD" }).click();
-    await expect(chart.getByText("$36,680")).toBeVisible();
+    await expect(chart.locator(".chart-summary strong")).toHaveText("$36,680");
   });
 
   test("completes a next move", async ({ page }) => {
