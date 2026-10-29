@@ -209,6 +209,7 @@ class SDKServer {
       const secretKey = this.getSessionSecret();
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
+        requiredClaims: ["exp"],
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
@@ -284,6 +285,9 @@ class SDKServer {
 
     if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
       const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+      if (userInfo.openId !== session.openId) {
+        throw ForbiddenError("Cron session identity mismatch");
+      }
       const taskUid = userInfo.taskUid ?? null;
       if (!taskUid) {
         throw ForbiddenError("Cron session missing task_uid");
@@ -299,6 +303,9 @@ class SDKServer {
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+        if (userInfo.openId !== sessionUserId) {
+          throw ForbiddenError("Session identity mismatch");
+        }
         await db.upsertUser({
           openId: userInfo.openId,
           name: userInfo.name || null,
