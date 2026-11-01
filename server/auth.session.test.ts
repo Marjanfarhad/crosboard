@@ -4,7 +4,7 @@ import { sdk, SESSION_LIFETIME_MS } from "./_core/sdk";
 import * as db from "./db";
 import { COOKIE_NAME } from "../shared/const";
 
-vi.mock("./db", () => ({ getUserByOpenId: vi.fn(), upsertUser: vi.fn() }));
+vi.mock("./db", () => ({ getUserByOpenId: vi.fn(), upsertUser: vi.fn(), isSessionRevoked: vi.fn().mockResolvedValue(false), revokeSession: vi.fn().mockResolvedValue(undefined) }));
 const secret = "synthetic-session-test-key-not-for-production";
 async function token(openId = "user-a", expiration?: number) {
   let jwt = new SignJWT({ openId, appId: "project-test", name: "" })
@@ -14,10 +14,32 @@ async function token(openId = "user-a", expiration?: number) {
 }
 function configure() {
   vi.stubEnv("MANUS_PROJECT_ID", "project-test");
+  vi.mocked(db.isSessionRevoked).mockResolvedValue(false);
+  vi.mocked(db.revokeSession).mockResolvedValue(undefined);
   vi.stubEnv("MANUS_JWT_SECRET", secret);
 }
 afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks(); vi.unstubAllEnvs(); });
 describe("session validation boundaries", () => {
+  it("immediately rejects a signed token after persistent revocation", async () => {
+    configure();
+    const signed = await sdk.createSessionToken("user-a");
+    expect(await sdk.verifySession(signed)).toMatchObject({ openId: "user-a" });
+    await sdk.revokeSessionToken(signed);
+    expect(db.revokeSession).toHaveBeenCalledOnce();
+    vi.mocked(db.isSessionRevoked).mockResolvedValue(true);
+    expect(await sdk.verifySession(signed)).toBeNull();
+  });
+  it("fails closed when revocation storage is unavailable", async () => {
+    configure();
+    const signed = await sdk.createSessionToken("user-a");
+    vi.mocked(db.isSessionRevoked).mockRejectedValue(new Error("DB offline"));
+    expect(await sdk.verifySession(signed)).toBeNull();
+  });
+  it("rejects logout revocation of forged tokens", async () => {
+    configure();
+    await expect(sdk.revokeSessionToken("not-a-jwt")).rejects.toThrow();
+    expect(db.revokeSession).not.toHaveBeenCalled();
+  });
   it("signs a short-lived session and refuses excessive or invalid lifetimes", async () => {
     configure();
     const signed = await sdk.createSessionToken("user-a");
