@@ -259,6 +259,20 @@ class SDKServer {
     await db.revokeSession(this.hashSessionToken(token), new Date(payload.exp * 1000));
   }
 
+  async revokeSessionTokensAtomically(tokens: string[]): Promise<void> {
+    if (!tokens.length) throw new Error("No sessions to revoke");
+    const secretKey = this.getSessionSecret();
+    const sessions = await Promise.all(tokens.map(async (token) => {
+      const { payload } = await jwtVerify(token, secretKey, {
+        algorithms: ["HS256"], requiredClaims: ["exp"],
+      });
+      if (payload.appId !== ENV.appId || typeof payload.openId !== "string" || !payload.openId ||
+          typeof payload.exp !== "number") throw new Error("Invalid session identity");
+      return { tokenHash: this.hashSessionToken(token), expiresAt: new Date(payload.exp * 1000) };
+    }));
+    await db.revokeSessionsAtomically(sessions);
+  }
+
   sessionTokensFromRequest(req: Request): string[] {
     const cookies = this.parseCookies(req.headers.cookie);
     const cookie = cookies.get(COOKIE_NAME);
