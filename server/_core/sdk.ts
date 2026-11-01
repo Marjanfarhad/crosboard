@@ -1,4 +1,4 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS, decodeOAuthState } from "@shared/const";
+import { AXIOS_TIMEOUT_MS, COOKIE_NAME, decodeOAuthState } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
@@ -17,6 +17,9 @@ import type {
 // Utility function
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
+
+// Short-lived sessions; full server-side revocation remains a separate release gate.
+export const SESSION_LIFETIME_MS = 8 * 60 * 60 * 1000;
 
 export type SessionPayload = {
   openId: string;
@@ -183,7 +186,10 @@ class SDKServer {
     options: { expiresInMs?: number } = {}
   ): Promise<string> {
     const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
+    const expiresInMs = options.expiresInMs ?? SESSION_LIFETIME_MS;
+    if (!Number.isSafeInteger(expiresInMs) || expiresInMs <= 0 || expiresInMs > SESSION_LIFETIME_MS) {
+      throw new Error("Invalid session lifetime");
+    }
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
