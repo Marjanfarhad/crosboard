@@ -23,7 +23,7 @@ export const appRouter = router({
             throw new Error("Session mismatch or already invalid");
           }
         }
-        for (const token of tokens) await sdk.revokeSessionToken(token);
+        await sdk.revokeSessionTokensAtomically(tokens);
       } catch {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Logout could not invalidate the session" });
       }
