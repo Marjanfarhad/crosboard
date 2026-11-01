@@ -11,11 +11,19 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(async ({ ctx }) => {
-      const token = sdk.sessionTokenFromRequest(ctx.req);
-      if (!token || !ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+      const tokens = sdk.sessionTokensFromRequest(ctx.req);
+      if (!tokens.length || !ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
       try {
         // Persist revocation BEFORE clearing the browser cookie.
-        await sdk.revokeSessionToken(token);
+        // Revoke both cookie and preview Bearer sessions when supplied.
+        // Never revoke a different user\'s token merely because it was attached.
+        for (const token of tokens) {
+          const session = await sdk.verifySession(token);
+          if (!session || session.openId !== ctx.user.openId) {
+            throw new Error("Session mismatch or already invalid");
+          }
+        }
+        for (const token of tokens) await sdk.revokeSessionToken(token);
       } catch {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Logout could not invalidate the session" });
       }
