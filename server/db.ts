@@ -107,3 +107,16 @@ export async function revokeSession(tokenHash: string, expiresAt: Date): Promise
   await database.insert(revokedSessions).values({ tokenHash, expiresAt })
     .onDuplicateKeyUpdate({ set: { expiresAt } });
 }
+
+/** Persist all session revocations atomically; failure rolls back the entire batch. */
+export async function revokeSessionsAtomically(sessions: { tokenHash: string; expiresAt: Date }[]): Promise<void> {
+  if (!sessions.length) throw new Error("No sessions to revoke");
+  const database = await getDb();
+  if (!database) throw new Error("Session revocation database unavailable");
+  await database.transaction(async (tx) => {
+    for (const session of sessions) {
+      await tx.insert(revokedSessions).values(session)
+        .onDuplicateKeyUpdate({ set: { expiresAt: session.expiresAt } });
+    }
+  });
+}
