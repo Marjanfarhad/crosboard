@@ -18,3 +18,12 @@ Status: **DRAFT — NOT APPROVED FOR PRODUCTION**.
 - No CI results are claimed until GitHub Actions completes on this branch.
 
 Do not merge, deploy, or change billing, secrets, or production without explicit owner approval.
+
+## Immediate logout revocation implementation (review candidate)
+- A shared MySQL table `revoked_sessions` stores only SHA-256 token hashes and expiration timestamps.
+- The logout mutation first persists a revocation, then clears the HttpOnly session cookie. A storage failure returns an error and does not falsely report successful logout.
+- Each JWT verification checks the shared store and rejects revoked sessions; lookup failures fail closed.
+- New mocked unit tests cover revocation, invalid tokens, and storage outage. CI and live integration tests are not yet verified.
+- **Required schema migration before any server rollout:** create `revoked_sessions` through the repository's Drizzle migration workflow, review generated SQL, test on a disposable database, and back up before any production migration. The branch changes schema only; no migration has run.
+- **Known limitation:** a Bearer token and a different cookie token in the same browser may represent different sessions. Logout invalidates the presented cookie first. Audit preview token storage and ensure all active tokens are revoked or removed when signing out.
+- **Security gate:** test concurrent logout and requests, cross-instance revocation, session expiration, migration/rollback, and a simulated database outage before deployment.
