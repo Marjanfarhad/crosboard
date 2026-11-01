@@ -1,5 +1,6 @@
 import { AXIOS_TIMEOUT_MS, COOKIE_NAME, decodeOAuthState } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
+import { createHash } from "node:crypto";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
@@ -18,7 +19,7 @@ import type {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
 
-// Short-lived sessions; full server-side revocation remains a separate release gate.
+// Short-lived sessions with persistent token-hash revocation.
 export const SESSION_LIFETIME_MS = 8 * 60 * 60 * 1000;
 
 export type SessionPayload = {
@@ -218,6 +219,9 @@ class SDKServer {
         requiredClaims: ["exp"],
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
+      // Every authenticated request checks the shared revocation store.
+      // Database failures reject access rather than accepting a revoked token.
+      if (await db.isSessionRevoked(this.hashSessionToken(cookieValue))) return null;
 
       if (
         !isNonEmptyString(openId) ||
@@ -237,6 +241,28 @@ class SDKServer {
       console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
+  }
+
+  private hashSessionToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  async revokeSessionToken(token: string): Promise<void> {
+    const secretKey = this.getSessionSecret();
+    const { payload } = await jwtVerify(token, secretKey, { algorithms: ["HS256"], requiredClaims: ["exp"] });
+    if (payload.appId !== ENV.appId || typeof payload.openId !== "string" || !payload.openId) {
+      throw new Error("Invalid session identity");
+    }
+    if (typeof payload.exp !== "number") throw new Error("Missing expiry");
+    await db.revokeSession(this.hashSessionToken(token), new Date(payload.exp * 1000));
+  }
+
+  sessionTokenFromRequest(req: Request): string | undefined {
+    const cookies = this.parseCookies(req.headers.cookie);
+    const cookie = cookies.get(COOKIE_NAME);
+    if (cookie) return cookie;
+    const header = req.headers.authorization;
+    return typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
   }
 
   async getUserInfoWithJwt(
