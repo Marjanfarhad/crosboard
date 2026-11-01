@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SignJWT } from "jose";
-import { sdk } from "./_core/sdk";
+import { sdk, SESSION_LIFETIME_MS } from "./_core/sdk";
 import * as db from "./db";
 import { COOKIE_NAME } from "../shared/const";
 
@@ -18,6 +18,16 @@ function configure() {
 }
 afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks(); vi.unstubAllEnvs(); });
 describe("session validation boundaries", () => {
+  it("signs a short-lived session and refuses excessive or invalid lifetimes", async () => {
+    configure();
+    const signed = await sdk.createSessionToken("user-a");
+    const { jwtVerify } = await import("jose");
+    const verified = await jwtVerify(signed, new TextEncoder().encode(secret));
+    expect(verified.payload.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(verified.payload.exp! - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(SESSION_LIFETIME_MS / 1000);
+    await expect(sdk.createSessionToken("user-a", { expiresInMs: 365 * 24 * 60 * 60 * 1000 })).rejects.toThrow("Invalid session lifetime");
+    await expect(sdk.createSessionToken("user-a", { expiresInMs: 0 })).rejects.toThrow("Invalid session lifetime");
+  });
   it("rejects a signed token without expiration", async () => {
     configure();
     expect(await sdk.verifySession(await token())).toBeNull();
