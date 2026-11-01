@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, revokedSessions, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,3 +89,21 @@ export async function getUserByOpenId(openId: string) {
 }
 
 // TODO: add feature queries here as your schema grows.
+
+/** Fail closed when the revocation store is unavailable. */
+export async function isSessionRevoked(tokenHash: string): Promise<boolean> {
+  const database = await getDb();
+  if (!database) throw new Error("Session revocation database unavailable");
+  const found = await database.select({ tokenHash: revokedSessions.tokenHash })
+    .from(revokedSessions)
+    .where(and(eq(revokedSessions.tokenHash, tokenHash), gt(revokedSessions.expiresAt, new Date())))
+    .limit(1);
+  return found.length > 0;
+}
+
+export async function revokeSession(tokenHash: string, expiresAt: Date): Promise<void> {
+  const database = await getDb();
+  if (!database) throw new Error("Session revocation database unavailable");
+  await database.insert(revokedSessions).values({ tokenHash, expiresAt })
+    .onDuplicateKeyUpdate({ set: { expiresAt } });
+}
