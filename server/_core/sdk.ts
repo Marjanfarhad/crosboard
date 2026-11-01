@@ -257,12 +257,12 @@ class SDKServer {
     await db.revokeSession(this.hashSessionToken(token), new Date(payload.exp * 1000));
   }
 
-  sessionTokenFromRequest(req: Request): string | undefined {
+  sessionTokensFromRequest(req: Request): string[] {
     const cookies = this.parseCookies(req.headers.cookie);
     const cookie = cookies.get(COOKIE_NAME);
-    if (cookie) return cookie;
     const header = req.headers.authorization;
-    return typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    const bearer = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    return [...new Set([cookie, bearer].filter((token): token is string => !!token))];
   }
 
   async getUserInfoWithJwt(
