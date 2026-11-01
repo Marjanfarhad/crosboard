@@ -47,13 +47,13 @@ describe("auth.logout", () => {
   it("clears the session cookie and reports success", async () => {
     const { ctx, clearedCookies } = createAuthContext();
     vi.spyOn(sdk, "verifySession").mockResolvedValue({ openId: "sample-user", appId: "test", name: "Sample User" });
-    const revoke = vi.spyOn(sdk, "revokeSessionToken").mockResolvedValue(undefined);
+    const revoke = vi.spyOn(sdk, "revokeSessionTokensAtomically").mockResolvedValue(undefined);
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.auth.logout();
 
     expect(result).toEqual({ success: true });
-    expect(revoke).toHaveBeenCalledWith("synthetic-test-token");
+    expect(revoke).toHaveBeenCalledWith(["synthetic-test-token"]);
     expect(clearedCookies).toHaveLength(1);
     expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
     expect(clearedCookies[0]?.options).toMatchObject({
@@ -62,5 +62,12 @@ describe("auth.logout", () => {
       httpOnly: true,
       path: "/",
     });
+  });
+  it("does not clear the cookie when atomic revocation fails", async () => {
+    const { ctx, clearedCookies } = createAuthContext();
+    vi.spyOn(sdk, "verifySession").mockResolvedValue({ openId: "sample-user", appId: "test", name: "Sample User" });
+    vi.spyOn(sdk, "revokeSessionTokensAtomically").mockRejectedValue(new Error("transaction rollback"));
+    await expect(appRouter.createCaller(ctx).auth.logout()).rejects.toThrow("Logout could not invalidate the session");
+    expect(clearedCookies).toHaveLength(0);
   });
 });
