@@ -1,5 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
+import { TRPCError } from "@trpc/server";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 
@@ -8,12 +10,18 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      const token = sdk.sessionTokenFromRequest(ctx.req);
+      if (!token || !ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+      try {
+        // Persist revocation BEFORE clearing the browser cookie.
+        await sdk.revokeSessionToken(token);
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Logout could not invalidate the session" });
+      }
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      ctx.res.clearCookie(COOKIE_NAME, cookieOptions);
+      return { success: true } as const;
     }),
   }),
 
