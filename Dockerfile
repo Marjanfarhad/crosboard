@@ -16,6 +16,11 @@ COPY patches ./patches
 RUN CI=1 pnpm install --prod --frozen-lockfile
 
 FROM node:22-bookworm-slim AS runtime
+# Production starts with the Node executable, never npm/npx/Corepack.
+# Their bundled dependency trees contain unrelated scanner findings.
+# Removing them only in the runtime stage does not affect the build stages.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 ENV NODE_ENV=production \
     PORT=3000
 WORKDIR /app
