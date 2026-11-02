@@ -7,7 +7,7 @@ Status: **NOT approved for production deployment or merge**.
 - GitHub CI run 41511179162 for the initial Docker hardening commit completed successfully. **That CI does not establish a Docker image build or CVE scan.**
 - GitHub Pages deployment workflow publishes only `dist/public`; it does not deploy the Express API or MySQL database.
 - Current server uses Express/tRPC and MySQL (Drizzle); Manus OAuth environment variables are required for existing login flow.
-- Production server currently imports Vite-related code. Removing all development dependencies prematurely may break runtime module resolution.
+- The draft branch now separates production static serving from Vite development imports and installs production dependencies in a separate Docker stage. These changes require a successful Docker build, smoke test, and CVE scan before approval.
 
 ## Verification required before merge or deployment
 1. Build the previous `main` image and the PR image on an isolated runner. Do not provide real credentials.
@@ -20,7 +20,7 @@ Status: **NOT approved for production deployment or merge**.
 
 ## Known limitations and risks
 - Docker Image CVE reduction is **unverified**; multi-stage alone is not proof of CVE reduction.
-- `node_modules` is intentionally retained in runtime for compatibility, including development packages.
+- New proposal installs `node_modules` with `pnpm install --prod --frozen-lockfile`; verify no runtime module is missing and compare the resulting scanner findings.
 - Current database schema contains only a `users` table; do not infer complete persistent business functionality from the dashboard.
 - The current OAuth callback sets a session with a one-year lifetime; evaluate shorter sessions and revocation before Internet-facing backend deployment.
 - GitHub Pages frontend is independent of this Dockerfile. Merging a container change cannot by itself activate the API, database or login in the static site.
