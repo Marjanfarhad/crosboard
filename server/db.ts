@@ -51,12 +51,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.lastSignedIn = user.lastSignedIn;
       updateSet.lastSignedIn = user.lastSignedIn;
     }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+    // Never trust role values from profile synchronization or callers.
+    // Only the server-configured owner identity may receive admin here.
+    // Existing roles for other users are preserved on update.
+    if (ENV.ownerOpenId && user.openId === ENV.ownerOpenId) {
+      values.role = "admin";
+      updateSet.role = "admin";
+    } else {
+      values.role = "user";
     }
 
     if (!values.lastSignedIn) {
