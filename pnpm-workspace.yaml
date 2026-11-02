@@ -4,9 +4,13 @@ patchedDependencies:
   wouter@3.7.1: patches/wouter@3.7.1.patch
 overrides:
   tailwindcss>nanoid: 3.3.7
-  # Trivy critical security findings; lockfile is regenerated in draft branch CI.
-  fast-xml-parser: 5.3.5
+  # Fix transitive findings identified by Trivy; validate with frozen-lockfile CI.
+  fast-xml-parser: 5.5.6
   proxy-addr: 2.0.8
+  axios: 1.16.0
+  mysql2: 3.22.0
+  form-data: 4.0.6
+  body-parser: 1.20.9
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
   - esbuild
