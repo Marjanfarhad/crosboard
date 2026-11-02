@@ -59,7 +59,7 @@ jobs:
         run: docker build --pull --tag crosboard:baseline ./baseline
 
       - name: Scan candidate container for vulnerabilities
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: crosboard:candidate
           format: json
@@ -68,7 +68,7 @@ jobs:
           scanners: vuln
 
       - name: Scan baseline container for vulnerabilities
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: crosboard:baseline
           format: json
