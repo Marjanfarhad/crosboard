@@ -1,5 +1,4 @@
-# Build on a full Node image, then copy only the artifacts required at runtime.
-# Pin image digests after CI validates the chosen platform and image provenance.
+# Build and production dependencies are intentionally separate.
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
@@ -9,14 +8,18 @@ RUN CI=1 pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-# Keep the same Node major and OS family to preserve native-module ABI.
+FROM node:22-bookworm-slim AS prod-deps
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
+RUN CI=1 pnpm install --prod --frozen-lockfile
+
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     PORT=3000
 WORKDIR /app
-# The server bundle currently imports Vite at module load time; retain the
-# installed dependency tree until a production-only dependency audit is tested.
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/package.json ./package.json
 USER node
