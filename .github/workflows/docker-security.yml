@@ -35,6 +35,10 @@ jobs:
           echo "Runtime UID: ${actual_uid}"
           test "${actual_uid}" != "0"
 
+      - name: Verify production runtime has no global npm tooling
+        run: |
+          docker run --rm --entrypoint node crosboard:candidate --input-type=commonjs -e "const fs=require('node:fs'); const p=['/usr/local/lib/node_modules/npm','/usr/local/lib/node_modules/corepack','/usr/local/bin/npm','/usr/local/bin/npx','/usr/local/bin/corepack']; const present=p.filter(x=>fs.existsSync(x)); if(present.length){console.error('Unexpected runtime tooling:',present);process.exit(1)} console.log('No npm/Corepack found in final runtime')"
+
       - name: Smoke-test container and HTTP health endpoint
         run: |
           set -euo pipefail
