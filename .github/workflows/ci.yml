@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/session-revocation-test-mock-20261102]
   pull_request:
     branches: [main]
   workflow_dispatch:
