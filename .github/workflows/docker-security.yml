@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - Dockerfile
+      - package.json
+      - server/_core/**
       - .dockerignore
       - .github/workflows/docker-security.yml
   workflow_dispatch:
