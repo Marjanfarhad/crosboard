@@ -51,6 +51,15 @@ describe("session validation boundaries", () => {
     await expect(sdk.revokeSessionTokensAtomically([valid, "forged"])).rejects.toThrow();
     expect(db.revokeSessionsAtomically).not.toHaveBeenCalled();
   });
+  it("rejects wrong-project sessions before consulting the revocation database", async () => {
+    configure();
+    const wrongProject = await new SignJWT({ openId: "user-a", appId: "other-project", name: "" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 60)
+      .sign(new TextEncoder().encode(secret));
+    expect(await sdk.verifySession(wrongProject)).toBeNull();
+    expect(db.isSessionRevoked).not.toHaveBeenCalled();
+  });
   it("fails closed when revocation storage is unavailable", async () => {
     configure();
     const signed = await sdk.createSessionToken("user-a");
