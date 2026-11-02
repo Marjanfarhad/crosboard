@@ -4,7 +4,7 @@ import { sdk, SESSION_LIFETIME_MS } from "./_core/sdk";
 import * as db from "./db";
 import { COOKIE_NAME } from "../shared/const";
 
-vi.mock("./db", () => ({ getUserByOpenId: vi.fn(), upsertUser: vi.fn(), isSessionRevoked: vi.fn().mockResolvedValue(false), revokeSession: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("./db", () => ({ getUserByOpenId: vi.fn(), upsertUser: vi.fn(), isSessionRevoked: vi.fn().mockResolvedValue(false), revokeSession: vi.fn().mockResolvedValue(undefined), revokeSessionsAtomically: vi.fn().mockResolvedValue(undefined) }));
 const secret = "synthetic-session-test-key-not-for-production";
 async function token(openId = "user-a", expiration?: number) {
   let jwt = new SignJWT({ openId, appId: "project-test", name: "" })
@@ -16,6 +16,7 @@ function configure() {
   vi.stubEnv("MANUS_PROJECT_ID", "project-test");
   vi.mocked(db.isSessionRevoked).mockResolvedValue(false);
   vi.mocked(db.revokeSession).mockResolvedValue(undefined);
+  vi.mocked(db.revokeSessionsAtomically).mockResolvedValue(undefined);
   vi.stubEnv("MANUS_JWT_SECRET", secret);
 }
 afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks(); vi.unstubAllEnvs(); });
@@ -28,6 +29,27 @@ describe("session validation boundaries", () => {
     expect(db.revokeSession).toHaveBeenCalledOnce();
     vi.mocked(db.isSessionRevoked).mockResolvedValue(true);
     expect(await sdk.verifySession(signed)).toBeNull();
+  });
+  it("persists multiple session revocations together without storing raw JWTs", async () => {
+    configure();
+    const first = await sdk.createSessionToken("user-a");
+    const second = await sdk.createSessionToken("user-a");
+    await sdk.revokeSessionTokensAtomically([first, second]);
+    expect(db.revokeSessionsAtomically).toHaveBeenCalledOnce();
+    const [sessions] = vi.mocked(db.revokeSessionsAtomically).mock.calls[0];
+    expect(sessions).toHaveLength(2);
+    for (const session of sessions) {
+      expect(session.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(session.tokenHash).not.toBe(first);
+      expect(session.tokenHash).not.toBe(second);
+      expect(session.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    }
+  });
+  it("rejects a forged token without partially persisting a batch", async () => {
+    configure();
+    const valid = await sdk.createSessionToken("user-a");
+    await expect(sdk.revokeSessionTokensAtomically([valid, "forged"])).rejects.toThrow();
+    expect(db.revokeSessionsAtomically).not.toHaveBeenCalled();
   });
   it("fails closed when revocation storage is unavailable", async () => {
     configure();
