@@ -1,30 +1,46 @@
 # Crosboard container and hosting security gate
 
-Status: **NOT approved for production deployment or merge**.
+Status: **DRAFT ONLY — NOT approved for merge or production deployment**.
 
-## Evidence checked
-- GitHub PR #9 adds a multi-stage Node 22 Dockerfile, a non-root runtime user and an HTTP healthcheck.
-- GitHub CI run 41511179162 for the initial Docker hardening commit completed successfully. **That CI does not establish a Docker image build or CVE scan.**
-- GitHub Pages deployment workflow publishes only `dist/public`; it does not deploy the Express API or MySQL database.
-- Current server uses Express/tRPC and MySQL (Drizzle); Manus OAuth environment variables are required for existing login flow.
-- The draft branch now separates production static serving from Vite development imports and installs production dependencies in a separate Docker stage. These changes require a successful Docker build, smoke test, and CVE scan before approval.
+## Verified Docker security comparison (GitHub Actions run 41514751501)
+- Tested PR branch commit: `ccbcbaead2bff0ec5b25b287bf4313b8447d16bd`.
+- Trivy JSON artifacts: GitHub Actions artifact ID `13174837734` (`docker-security-reports`).
+- Both original `main` and candidate Docker images built successfully.
+- Candidate ran as UID 1000 (not root), and `/api/health` smoke test passed.
+- Trivy image scans completed; below are **vulnerability findings**, not unique CVEs.
 
-## Verification required before merge or deployment
-1. Build the previous `main` image and the PR image on an isolated runner. Do not provide real credentials.
-2. Run each container without privileged mode; check UID (`id -u`) and that `/api/health` returns HTTP 200.
-3. Verify static asset routing, OAuth callback, session expiry/identity protection, API access control, and actual MySQL connectivity using non-production credentials.
-4. Run a vulnerability scanner (e.g. Trivy) against both built image digests, record the scanner DB timestamp, severity counts and unfixed/fixed distinctions; compare like-for-like results.
-5. Ensure `docker history` and the build context contain no secrets. Pin reviewed base-image digests.
-6. Evaluate dependency pruning and Node LTS support using an actual runtime smoke test.
-7. Confirm production rollback procedures and DB backups. Do not run migrations against production during testing.
+| Severity | Baseline | Candidate | Difference |
+|---|---:|---:|---:|
+| CRITICAL | 13 | 3 | -10 |
+| HIGH | 226 | 67 | -159 |
+| MEDIUM | 372 | 166 | -206 |
+| LOW | 113 | 97 | -16 |
+| UNKNOWN | 5 | 2 | -3 |
+| **TOTAL** | **729** | **335** | **-394 (54.0%)** |
 
-## Known limitations and risks
-- Docker Image CVE reduction is **unverified**; multi-stage alone is not proof of CVE reduction.
-- New proposal installs `node_modules` with `pnpm install --prod --frozen-lockfile`; verify no runtime module is missing and compare the resulting scanner findings.
-- Current database schema contains only a `users` table; do not infer complete persistent business functionality from the dashboard.
-- The current OAuth callback sets a session with a one-year lifetime; evaluate shorter sessions and revocation before Internet-facing backend deployment.
-- GitHub Pages frontend is independent of this Dockerfile. Merging a container change cannot by itself activate the API, database or login in the static site.
+### Three remaining critical findings
+1. `CVE-2023-45853` — Debian `zlib1g` `1:1.2.13.dfsg-1`; scanner lists no fixed version. Review Debian advisory/exploitability and alternative base images; do not force a speculative package override.
+2. `CVE-2026-25896` — `fast-xml-parser` `5.2.5`; scanner lists patched versions `5.3.5` or `4.5.4`. Identify the transitive parent and update the lockfile in a separate, tested change.
+3. `CVE-2026-90711` — `proxy-addr` `2.0.7`; scanner lists fix `2.0.8`. Identify its Express dependency path and update with compatibility and lockfile tests.
+
+## Other verification
+- GitHub CI run `41514751484`: TypeScript and unit-test steps passed; the overall run was **cancelled**, so Playwright and Lighthouse for that run are not confirmed.
+- Earlier security scan (run `41513304298`) found 671 candidate vulnerabilities. The latest successful run found 335, a further reduction of 336 findings in this specific scan.
+- The production candidate currently separates Vite development imports from production static serving and installs only production pnpm dependencies.
+
+## Required gates before merge or deployment
+1. Verify no new runtime failures: static asset serving, protected tRPC routes, OAuth callback, session expiry, real MySQL connectivity, using **non-production** credentials.
+2. Review all remaining CRITICAL findings and HIGH findings for fixes or written risk acceptance; re-run a versioned vulnerability scan and review JSON artifacts.
+3. Complete full **uncancelled** CI checks including TypeScript, unit tests, Playwright and Lighthouse.
+4. Pin verified base images and GitHub Actions to reviewed digests; inspect image history and build context for secrets.
+5. Define database backups, rollback procedure, and deployment security controls. **Do not run production migrations in tests.**
+
+## Application architecture limitations
+- GitHub Pages serves only the static frontend (`dist/public`), not Express/tRPC, MySQL, or Manus OAuth.
+- The database schema currently defines only the `users` table.
+- Existing OAuth session lifetime is one year; evaluate shortening and revocation before an Internet-facing backend rollout.
+- Successful container smoke tests do **not** verify live OAuth, persistence, or the end-to-end authenticated application.
 
 ## Change policy
-Allowed without additional approval: read-only inspections, reversible draft-branch edits, tests that use mock/non-production data, documenting results.
-Require explicit separate approval: production deployment, merges to main, DNS/secrets changes, production database writes/migrations, billing or paid service activation, external publication.
+Permitted: read-only inspections, reversible draft-branch edits, and non-production tests without publishing.
+Require a new explicit approval: merging to main, production deployment, production DB modifications or migrations, DNS/secrets changes, billing, paid resource use, or external publication.
