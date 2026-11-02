@@ -1,0 +1,113 @@
+name: Docker security comparison
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker-security.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout proposed change
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build candidate Docker image
+        run: docker build --pull --tag crosboard:candidate .
+
+      - name: Assert runtime is non-root
+        run: |
+          actual_uid="$(docker run --rm --entrypoint id crosboard:candidate -u)"
+          echo "Runtime UID: ${actual_uid}"
+          test "${actual_uid}" != "0"
+
+      - name: Smoke-test container and HTTP health endpoint
+        run: |
+          set -euo pipefail
+          container_id="$(docker run --detach --publish 127.0.0.1:18080:3000 crosboard:candidate)"
+          trap 'docker logs "${container_id}" || true; docker rm --force "${container_id}" || true' EXIT
+          success=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:18080/api/health; then
+              success=1
+              break
+            fi
+            sleep 2
+          done
+          test "${success}" = 1
+          echo
+          echo "Candidate health endpoint responded successfully"
+
+      - name: Checkout baseline Dockerfile from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+          persist-credentials: false
+
+      - name: Build baseline Docker image
+        run: docker build --pull --tag crosboard:baseline ./baseline
+
+      - name: Scan candidate container for vulnerabilities
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: crosboard:candidate
+          format: json
+          output: candidate-trivy.json
+          exit-code: '0'
+          scanners: vuln
+
+      - name: Scan baseline container for vulnerabilities
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: crosboard:baseline
+          format: json
+          output: baseline-trivy.json
+          exit-code: '0'
+          scanners: vuln
+
+      - name: Summarize CVE counts by severity
+        run: |
+          python3 - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          def count(path):
+              data = json.loads(Path(path).read_text())
+              return Counter(v.get("Severity", "UNKNOWN") for r in data.get("Results", []) for v in (r.get("Vulnerabilities") or []))
+          baseline = count("baseline-trivy.json")
+          candidate = count("candidate-trivy.json")
+          lines = ["## Docker vulnerability comparison", "", "| Severity | Baseline | Candidate | Difference |", "|---|---:|---:|---:|"]
+          for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]:
+              a, b = baseline[severity], candidate[severity]
+              lines.append(f"| {severity} | {a} | {b} | {b-a:+d} |")
+          lines += ["", "Counts are scanner findings (not deduplicated CVE IDs). Review JSON reports for actual packages, fixes and false positives."]
+          report = "\n".join(lines) + "\n"
+          print(report)
+          Path("docker-cve-summary.md").write_text(report)
+          summary_path = __import__("os").environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a") as stream:
+                  stream.write(report)
+          PY
+
+      - name: Upload scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-security-reports
+          path: |
+            candidate-trivy.json
+            baseline-trivy.json
+            docker-cve-summary.md
+          if-no-files-found: ignore
