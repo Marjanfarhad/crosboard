@@ -23,6 +23,14 @@ Status: **DRAFT ONLY — NOT approved for merge or production deployment**.
 2. `CVE-2026-25896` — `fast-xml-parser` `5.2.5`; scanner lists patched versions `5.3.5` or `4.5.4`. Identify the transitive parent and update the lockfile in a separate, tested change.
 3. `CVE-2026-90711` — `proxy-addr` `2.0.7`; scanner lists fix `2.0.8`. Identify its Express dependency path and update with compatibility and lockfile tests.
 
+## Critical remediation in progress (November 3, 2026)
+- `pnpm-workspace.yaml` now overrides `fast-xml-parser` to `5.3.5` and `proxy-addr` to `2.0.8`.
+- The regenerated `pnpm-lock.yaml` has verified package entries for `fast-xml-parser@5.3.5` and `proxy-addr@2.0.8`, with the older `5.2.5` and `2.0.7` entries absent.
+- CI now verifies the static HTML response, unauthenticated OAuth callback rejection, and absence of both named CVEs in the built candidate. These checks must pass on the **latest** draft branch head.
+- Temporary write-enabled dependency lockfile regeneration workflow was removed immediately after regenerating the pinned lockfile.
+- Remaining `CVE-2023-45853` is recorded by Trivy as `will_not_fix` on Debian `zlib1g`. The advisory targets MiniZip's `zipOpenNewFileInZip4_64`, not every zlib code path. Do not claim application exploitability or apply an untested package override; check actual image/library use and alternative base images separately.
+- The security scan is configured with `exit-code: 0` to produce reports; absence of the two named critical CVEs is enforced by the subsequent verification step. Other unresolved findings must be reviewed manually.
+
 ## Other verification
 - GitHub CI run `41514751484`: TypeScript and unit-test steps passed; the overall run was **cancelled**, so Playwright and Lighthouse for that run are not confirmed.
 - Earlier security scan (run `41513304298`) found 671 candidate vulnerabilities. The latest successful run found 335, a further reduction of 336 findings in this specific scan.
