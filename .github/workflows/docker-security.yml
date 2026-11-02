@@ -7,6 +7,8 @@ on:
       - Dockerfile
       - package.json
       - server/_core/**
+      - pnpm-workspace.yaml
+      - pnpm-lock.yaml
       - .dockerignore
       - .github/workflows/docker-security.yml
   workflow_dispatch:
@@ -49,6 +51,11 @@ jobs:
           test "${success}" = 1
           echo
           echo "Candidate health endpoint responded successfully"
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:18080/crosboard/ > /tmp/crosboard-page.html
+          grep -qi '<html' /tmp/crosboard-page.html
+          callback_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/api/oauth/callback)"
+          test "${callback_status}" = "400"
+          echo "Static HTML and unauthenticated OAuth callback checks passed"
 
       - name: Checkout baseline Dockerfile from main
         uses: actions/checkout@v4
@@ -101,6 +108,20 @@ jobs:
           if summary_path:
               with open(summary_path, "a") as stream:
                   stream.write(report)
+          PY
+
+      - name: Require patched critical CVEs to be absent
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("candidate-trivy.json").read_text())
+          findings = [v for r in data.get("Results", []) for v in (r.get("Vulnerabilities") or [])]
+          patched = {"CVE-2026-25896", "CVE-2026-90711"}
+          remaining = [(v.get("VulnerabilityID"), v.get("PkgName"), v.get("InstalledVersion")) for v in findings if v.get("VulnerabilityID") in patched]
+          if remaining:
+              raise SystemExit(f"Critical fix regression: {remaining}")
+          print("Both targeted critical CVEs are absent from production image")
           PY
 
       - name: Upload scan reports
