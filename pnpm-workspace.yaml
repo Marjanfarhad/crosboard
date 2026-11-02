@@ -4,6 +4,9 @@ patchedDependencies:
   wouter@3.7.1: patches/wouter@3.7.1.patch
 overrides:
   tailwindcss>nanoid: 3.3.7
+  # Trivy critical security findings; lockfile is regenerated in draft branch CI.
+  fast-xml-parser: 5.3.5
+  proxy-addr: 2.0.8
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
   - esbuild
