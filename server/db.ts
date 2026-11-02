@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { roleForIdentitySync } from "./role-policy";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -54,7 +55,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     // Never trust role values from profile synchronization or callers.
     // Only the server-configured owner identity may receive admin here.
     // Existing roles for other users are preserved on update.
-    if (ENV.ownerOpenId && user.openId === ENV.ownerOpenId) {
+    if (roleForIdentitySync(user.openId, ENV.ownerOpenId) === "admin") {
       values.role = "admin";
       updateSet.role = "admin";
     } else {
