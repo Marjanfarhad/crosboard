@@ -221,10 +221,6 @@ class SDKServer {
         requiredClaims: ["exp"],
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
-      // Every authenticated request checks the shared revocation store.
-      // Database failures reject access rather than accepting a revoked token.
-      if (await db.isSessionRevoked(this.hashSessionToken(cookieValue))) return null;
-
       if (
         !isNonEmptyString(openId) ||
         (!isNonEmptyString(appId) || appId !== ENV.appId) ||
@@ -233,6 +229,10 @@ class SDKServer {
         console.warn("[Auth] Session payload missing required fields");
         return null;
       }
+
+      // Check identity before querying the shared revocation database.
+      // Every valid session still fails closed if revocation storage is unavailable.
+      if (await db.isSessionRevoked(this.hashSessionToken(cookieValue))) return null;
 
       return {
         openId,
