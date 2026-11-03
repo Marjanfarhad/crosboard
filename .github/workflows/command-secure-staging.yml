@@ -53,7 +53,7 @@ jobs:
       - name: Verify anonymous requests reach Access login
         run: |
           python3 - <<'PY'
-          import time, urllib.request, urllib.error
+          import time, urllib.request, urllib.error, re
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, req, fp, code, msg, headers, newurl):
                   return None
@@ -64,6 +64,12 @@ jobs:
                   code, location = response.status, response.headers.get('Location', '')
               except urllib.error.HTTPError as error:
                   code, location = error.code, error.headers.get('Location', '')
+                  body = error.read().decode('utf-8', errors='replace')
+                  if attempt == 11:
+                      title = re.search(r'<title>(.*?)</title>', body, re.S)
+                      print('Denial page title:', title.group(1)[:200] if title else 'No HTML title')
+                      text = re.sub(r'<[^>]*>', ' ', body)
+                      print('Denial excerpt:', re.sub(r'\s+', ' ', text)[:600])
               if code in (301,302,303,307,308) and '.cloudflareaccess.com/' in location:
                   print('Anonymous request redirects to Cloudflare Access login.')
                   break
