@@ -61,6 +61,43 @@ jobs:
           test "${callback_status}" = "400"
           echo "Static HTML and unauthenticated OAuth callback checks passed"
 
+      - name: Verify isolated MySQL and Drizzle runtime connectivity
+        run: |
+          set -euo pipefail
+          docker network create crosboard-ci-db
+          docker run -d --name crosboard-ci-mysql --network crosboard-ci-db \
+            -e MYSQL_ROOT_PASSWORD=isolated-ci-only \
+            -e MYSQL_DATABASE=crosboard_ci mysql:8.4
+          cleanup() {
+            docker rm -f crosboard-ci-mysql >/dev/null 2>&1 || true
+            docker network rm crosboard-ci-db >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          ready=0
+          for attempt in $(seq 1 45); do
+            if docker exec crosboard-ci-mysql mysqladmin ping -h127.0.0.1 -uroot -pisolated-ci-only --silent >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          docker run --rm --network crosboard-ci-db --entrypoint node crosboard:candidate --input-type=module -e "
+            import mysql from 'mysql2/promise';
+            import { drizzle } from 'drizzle-orm/mysql2';
+            import { sql } from 'drizzle-orm';
+            const client = await mysql.createConnection({
+              host: 'crosboard-ci-mysql',
+              user: 'root',
+              password: 'isolated-ci-only',
+              database: 'crosboard_ci'
+            });
+            const db = drizzle(client);
+            await db.execute(sql\`SELECT 1 AS healthcheck\`);
+            await client.end();
+            console.log('Isolated MySQL / Drizzle query passed');
+          "
+
       - name: Checkout baseline Dockerfile from main
         uses: actions/checkout@v4
         with:
