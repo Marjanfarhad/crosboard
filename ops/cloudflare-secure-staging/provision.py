@@ -43,6 +43,18 @@ else:
         'policies': [{'name': 'Staging owner only', 'decision': 'allow',
                       'include': [{'email': {'email': email}}]}]
     })
+# Attach Access to this Worker as well as its hostname so workers.dev traffic
+# is intercepted before the module's fail-closed JWT validation.
+workers = api('/workers/workers?per_page=100')
+staging = [worker for worker in workers if worker.get('name') == 'command-app-secure-staging']
+if len(staging) != 1:
+    raise SystemExit('Expected exactly one deployed staging Worker.')
+app = api('/access/apps/' + app['id'], 'PUT', {
+    'name': app['name'], 'type': 'self_hosted', 'domain': hostname,
+    'session_duration': '1h',
+    'destinations': [{'type': 'worker', 'worker_id': staging[0]['id']}],
+    'policies': policies if matches else app.get('policies', [])
+})
 if not app.get('aud'):
     raise SystemExit('Access application audience missing; deployment stopped.')
 
