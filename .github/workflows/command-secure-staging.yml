@@ -60,7 +60,7 @@ jobs:
           opener = urllib.request.build_opener(NoRedirect)
           for attempt in range(12):
               try:
-                  response = opener.open('https://command-app-secure-staging.caring-philodendron.workers.dev/', timeout=15)
+                  response = opener.open(urllib.request.Request('https://command-app-secure-staging.caring-philodendron.workers.dev/', headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36', 'Accept': 'text/html'}), timeout=15)
                   code, location = response.status, response.headers.get('Location', '')
               except urllib.error.HTTPError as error:
                   code, location = error.code, error.headers.get('Location', '')
