@@ -10,6 +10,12 @@ import mysql, { type Connection, type RowDataPacket } from "mysql2/promise";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { decodeJwt } from "jose";
+import express from "express";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { createContext } from "./_core/context";
+import { protectedProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
 import * as db from "./db";
 import { appRouter } from "./routers";
@@ -125,4 +131,79 @@ describe.skipIf(!enabled)("session revocation with actual MySQL (no DB mocks)", 
     await logout(second).api.auth.logout();
     expect(await sdk.verifySession(second)).toBeNull();
   }, 30_000);
+  it("enforces cookie sessions, logout and fail-closed recovery over real HTTP", async () => {
+    if (!client) throw new Error("MySQL not initialized");
+    const app = express();
+    app.use(express.json());
+    app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
+    // Test-only procedure: exercise the application's real protection middleware.
+    const probe = router({
+      identity: protectedProcedure.query(({ ctx }) => ({ openId: ctx.user.openId })),
+    });
+    app.use("/api/probe", createExpressMiddleware({ router: probe, createContext }));
+    const server = createServer(app);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing HTTP listener");
+    const base = "http://127.0.0.1:" + address.port;
+    async function call(path: string, token?: string, method = "GET") {
+      return fetch(base + path, {
+        method,
+        headers: token ? { cookie: COOKIE_NAME + "=" + token } : {},
+      });
+    }
+    async function identity(token?: string) {
+      const response = await call("/api/probe/identity", token);
+      const body = await response.json();
+      return { response, body };
+    }
+    try {
+      const first = await sdk.createSessionToken("synthetic-user-a", { expiresInMs: 120_000 });
+      const second = await sdk.createSessionToken("synthetic-user-b", { expiresInMs: 120_000 });
+      expect((await identity()).response.status).toBe(401);
+      expect((await identity("invalid-token")).response.status).toBe(401);
+      const active = await identity(first);
+      expect(active.response.status).toBe(200);
+      expect(active.body.result.data.json).toEqual({ openId: "synthetic-user-a" });
+      const me = await call("/api/trpc/auth.me", first);
+      expect(me.status).toBe(200);
+      expect((await me.json()).result.data.json.openId).toBe("synthetic-user-a");
+
+      const loggedOut = await call("/api/trpc/auth.logout", first, "POST");
+      expect(loggedOut.status).toBe(200);
+      expect((await loggedOut.json()).result.data.json).toEqual({ success: true });
+      const clearedCookie = loggedOut.headers.get("set-cookie") ?? "";
+      expect(clearedCookie).toContain(COOKIE_NAME + "=");
+      expect(clearedCookie).toMatch(/Expires=Thu, 01 Jan 1970/i);
+      expect((await identity(first)).response.status).toBe(401);
+      expect((await identity(second)).body.result.data.json.openId).toBe("synthetic-user-b");
+
+      const expired = await sdk.createSessionToken("synthetic-user-a", { expiresInMs: 120_000 });
+      await client.execute("UPDATE auth_sessions SET expiresAt=DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE idHash=?", [fingerprint(expired)]);
+      expect((await identity(expired)).response.status).toBe(401);
+
+      await client.query("RENAME TABLE auth_sessions TO auth_sessions_unavailable");
+      renamed = true;
+      try {
+        expect((await identity(second)).response.status).toBe(401);
+        const failure = await call("/api/trpc/auth.logout", second, "POST");
+        expect(failure.status).toBe(500);
+        expect(await failure.json()).toHaveProperty("error");
+        expect(failure.headers.get("set-cookie")).toContain(COOKIE_NAME + "=");
+      } finally {
+        await client.query("RENAME TABLE auth_sessions_unavailable TO auth_sessions");
+        renamed = false;
+      }
+      // An unsuccessful logout has not invalidated the copied token.
+      expect((await identity(second)).response.status).toBe(200);
+      const recovery = await call("/api/trpc/auth.logout", second, "POST");
+      expect(recovery.status).toBe(200);
+      expect((await identity(second)).response.status).toBe(401);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }, 30_000);
+
 });
