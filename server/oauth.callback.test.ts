@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
-import { COOKIE_NAME, OAUTH_STATE_COOKIE, encodeOAuthState } from "../shared/const";
+import { COOKIE_NAME, OAUTH_STATE_COOKIE, ONE_WEEK_MS, encodeOAuthState } from "../shared/const";
 import { registerOAuthRoutes } from "./_core/oauth";
 import { sdk } from "./_core/sdk";
 import * as db from "./db";
@@ -80,13 +80,14 @@ describe("OAuth callback security boundaries (mock provider and DB)", () => {
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/");
     expect(db.upsertUser).toHaveBeenCalledWith(expect.objectContaining({ openId: "synthetic-user" }));
-    expect(sdk.createSessionToken).toHaveBeenCalledWith("synthetic-user", expect.any(Object));
+    expect(sdk.createSessionToken).toHaveBeenCalledWith("synthetic-user", expect.objectContaining({ expiresInMs: ONE_WEEK_MS }));
 
     const cookies = response.headers.get("set-cookie") ?? "";
     expect(cookies).toContain(`${COOKIE_NAME}=synthetic-session-token`);
     expect(cookies.toLowerCase()).toContain("httponly");
     expect(cookies.toLowerCase()).toContain("secure");
     expect(cookies.toLowerCase()).toContain("samesite=none");
+    expect(cookies).toContain("Max-Age=" + Math.floor(ONE_WEEK_MS / 1000));
   });
 
   it("does not grant a session when user info has no openId", async () => {
