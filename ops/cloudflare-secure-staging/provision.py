@@ -20,7 +20,9 @@ def api(path, method='GET', body=None):
         with urllib.request.urlopen(req, timeout=30) as response:
             result = json.load(response)
     except urllib.error.HTTPError as error:
-        raise SystemExit(f'Cloudflare {method} {path}: HTTP {error.code}. No token or response body logged.') from None
+        details = json.load(error).get('errors', [])
+        summary = '; '.join(str(item.get('code')) + ': ' + str(item.get('message', ''))[:300] for item in details)
+        raise SystemExit(f'Cloudflare {method} {path}: HTTP {error.code}. {summary}') from None
     if not result.get('success'):
         raise SystemExit(f'Cloudflare {method} {path} failed.')
     return result['result']
