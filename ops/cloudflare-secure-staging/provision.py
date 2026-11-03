@@ -54,7 +54,7 @@ if len(staging) != 1:
 app = api('/access/apps/' + app['id'], 'PUT', {
     'name': app['name'], 'type': 'self_hosted', 'domain': hostname,
     'session_duration': '1h',
-    'destinations': [{'type': 'worker', 'worker_id': staging[0]['id']}],
+    'destinations': [{'type': 'public', 'uri': hostname}, {'type': 'worker', 'worker_id': staging[0]['id']}],
     'policies': policies if matches else app.get('policies', [])
 })
 if not app.get('aud'):
