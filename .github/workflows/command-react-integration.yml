@@ -26,7 +26,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - run: pnpm exec vitest run client/src/lib/cloudWorkspace.test.ts
+      - run: pnpm exec vitest run client/src/lib/cloudWorkspace.test.ts client/src/lib/cloudCsv.test.ts
       - name: Verify Cloudflare backend regression tests
         run: |
           node ops/cloudflare-secure-staging/api.test.mjs
@@ -35,6 +35,12 @@ jobs:
         env:
           VITE_COMMAND_CLOUD_SYNC: 'true'
         run: pnpm build:static
+      - name: Install browser for cloud UI regression checks
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test cloud controls on desktop and mobile with a mock API
+        env:
+          VITE_COMMAND_CLOUD_SYNC: 'true'
+        run: pnpm exec playwright test --config playwright.cloud.config.ts
       - uses: actions/upload-artifact@v4
         with:
           name: command-react-cloud-frontend

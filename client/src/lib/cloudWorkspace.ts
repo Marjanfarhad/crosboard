@@ -32,6 +32,11 @@ export function useCloudWorkspace(enabled:boolean){
   }catch(cause){if(!cancelled){setError(cause instanceof Error?cause.message:'Cloud unavailable');setStatus('error');}}})();
   return ()=>{cancelled=true;owner.current='';latest.current=null;};
  },[enabled]);
+ useEffect(()=>{
+  if(!enabled)return;
+  const warn=(event:BeforeUnloadEvent)=>{if(busy.current){event.preventDefault();event.returnValue='';}};
+  window.addEventListener('beforeunload',warn);return ()=>window.removeEventListener('beforeunload',warn);
+ },[enabled]);
  const save=useCallback(async(update:(data:Workspace)=>Workspace)=>{
   if(!latest.current||busy.current)throw new Error('Wait for the current cloud operation');
   busy.current=true;setStatus('saving');

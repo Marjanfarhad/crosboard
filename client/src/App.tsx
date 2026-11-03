@@ -1,3 +1,4 @@
+import {CloudWorkspaceTools} from './components/CloudWorkspaceTools';
 import {useCloudWorkspace, videoTotals} from './lib/cloudWorkspace';
 import {CloudVideoStudio} from './components/CloudVideoStudio';
 const CLOUD = (import.meta as ImportMeta & {env:Record<string,string>}).env.VITE_COMMAND_CLOUD_SYNC === 'true';
@@ -37,7 +38,7 @@ type ProductColor = "lime" | "cream" | "orange";
 type Range = "7D" | "30D" | "MTD";
 
 type Product = {
-  id: number;
+  id: string | number;
   name: string;
   type: string;
   revenue: string;
@@ -208,13 +209,15 @@ export default function App() {
   const [range, setRange] = useState<Range>("7D");
   const [demoProducts, setProducts] = useState<Product[]>(initialProducts);
   const cloud=useCloudWorkspace(CLOUD);
-  const products:Product[]=CLOUD?(cloud.snapshot?.data.products??[]).map((p,index):Product=>({id:index+1,name:p.name,type:'Cloud product',revenue:'—',trend:'saved',color:'cream',note:'Saved in your workspace'})):demoProducts;
+  const products:Product[]=CLOUD?(cloud.snapshot?.data.products??[]).map((p):Product=>({id:p.id,name:p.name,type:'Cloud product',revenue:'—',trend:'saved',color:'cream',note:'Saved in your workspace'})):demoProducts;
   const totals=videoTotals(cloud.snapshot?.data.videos??[]);
   const [doneMoves, setDoneMoves] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [showMobileNav, setShowMobileNav] = useState(false);
   const [newProduct, setNewProduct] = useState("");
+  const [editingProductId,setEditingProductId]=useState<string|number|null>(null);
+  const [productPrice,setProductPrice]=useState('0');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showHelp, setShowHelp] = useState(false);
@@ -276,8 +279,9 @@ export default function App() {
       return;
     }
     if(CLOUD){
-      try{await cloud.save(doc=>({...doc,products:[...doc.products,{id:crypto.randomUUID(),name:title,price:0}]}));
-        setProductError('');setNewProduct('');setShowAdd(false);pushToast('Product saved to cloud.','success');
+      try{const price=Number(productPrice);if(!Number.isFinite(price)||price<0){setProductError('Price must be non-negative.');return;}
+        await cloud.save(doc=>({...doc,products:editingProductId!==null?doc.products.map(p=>p.id===editingProductId?{...p,name:title,price}:p):[...doc.products,{id:crypto.randomUUID(),name:title,price}]}));
+        setProductError('');setNewProduct('');setProductPrice('0');setEditingProductId(null);setShowAdd(false);pushToast('Product saved to cloud.','success');
       }catch(cause){setProductError(cause instanceof Error?cause.message:'Cloud save failed');}
       return;
     }
@@ -329,13 +333,13 @@ export default function App() {
           <div className="avatar">M</div>
           <div className="workspace-copy">
             <strong>{CLOUD?"Cloud workspace":"Sample workspace"}</strong>
-            <span role="status">{CLOUD?(cloud.status==='saving'?'Saving to cloud…':'Cloud saved'):'Session only · no cloud sync'}</span>
+            <span role="status">{CLOUD?(cloud.status==='saving'?'Saving to cloud…':cloud.error?'Cloud save paused':'Cloud saved'):'Session only · no cloud sync'}</span>
           </div>
           <ChevronDown size={14} />
         </button>
         <div className="nav-heading">Workspace</div>
         <nav className="main-nav" aria-label="Main navigation">
-          {navItems.map(({ label, icon: Icon }) => (
+          {[...navItems,...(CLOUD?[{label:'Video Log',icon:BarChart3},{label:'Creative',icon:Sparkles},{label:'Reminders',icon:Bell},{label:'Data',icon:FolderKanban},{label:'Connect',icon:Radio}]:[])].map(({ label, icon: Icon }) => (
             <button
               key={label}
               className={`nav-item ${activeNav === label ? "active" : ""}`}
@@ -482,13 +486,13 @@ export default function App() {
                   <div className="hero-actions">
                     <button
                       className="primary-button"
-                      disabled={CLOUD&&cloud.status!=='ready'} onClick={() => setShowAdd(true)}
+                      disabled={CLOUD&&cloud.status!=='ready'} onClick={() => {setEditingProductId(null);setNewProduct('');setProductPrice('0');setShowAdd(true);}}
                     >
                       <Plus size={16} /> Add a product
                     </button>
                     <button
                       className="text-button"
-                      onClick={() => (
+                      onClick={() => CLOUD?selectNav('Studio'):( 
                         nextMovesRef.current?.scrollIntoView({
                           behavior: window.matchMedia(
                             "(prefers-reduced-motion: reduce)"
@@ -500,7 +504,7 @@ export default function App() {
                         nextMovesRef.current?.focus({ preventScroll: true })
                       )}
                     >
-                      View next moves <ArrowUpRight size={15} />
+                      {CLOUD?'Log a video':'View next moves'} <ArrowUpRight size={15} />
                     </button>
                   </div>
                 </div>
@@ -555,7 +559,7 @@ export default function App() {
                 </div>
                 <button
                   className="outline-button"
-                  disabled={CLOUD&&cloud.status!=='ready'} onClick={() => setShowAdd(true)}
+                  disabled={CLOUD&&cloud.status!=='ready'} onClick={() => {setEditingProductId(null);setNewProduct('');setProductPrice('0');setShowAdd(true);}}
                 >
                   New product <Plus size={15} />
                 </button>
@@ -566,14 +570,15 @@ export default function App() {
                     key={product.id}
                     product={product}
                     index={index}
-                    onMore={() =>
+                    onMore={() => {
+                      if(CLOUD){const raw=cloud.snapshot?.data.products.find(p=>p.id===product.id);if(raw){setEditingProductId(raw.id);setNewProduct(raw.name);setProductPrice(String(raw.price??0));setShowAdd(true);}return;}
                       pushToast(
                         `${product.name}: ${product.type}. ${product.note} (sample data).`
-                      )
-                    }
+                      );
+                    }}
                   />
                 ))}
-                <button className="add-card" disabled={CLOUD&&cloud.status!=='ready'} onClick={() => setShowAdd(true)}>
+                <button className="add-card" disabled={CLOUD&&cloud.status!=='ready'} onClick={() => {setEditingProductId(null);setNewProduct('');setProductPrice('0');setShowAdd(true);}}>
                   <span>
                     <Plus size={20} />
                   </span>
@@ -767,8 +772,9 @@ export default function App() {
             </section>
           )}
 
-          {CLOUD && activeNav === "Studio" && cloud.snapshot && <CloudVideoStudio data={cloud.snapshot.data} saving={cloud.status!=='ready'} onSave={cloud.save}/> }
-          {!CLOUD && activeNav === "Studio" && (
+          {CLOUD && ['Studio','Video Log'].includes(activeNav) && cloud.snapshot && <CloudVideoStudio data={cloud.snapshot.data} saving={cloud.status!=='ready'} onSave={cloud.save}/> }
+          {CLOUD&&cloud.snapshot&&['Creative','Reminders','Data','Connect'].includes(activeNav)&&<CloudWorkspaceTools key={activeNav} page={activeNav} data={cloud.snapshot.data} disabled={cloud.status!=='ready'} onSave={cloud.save}/>}
+          {!CLOUD && ['Studio','Video Log'].includes(activeNav) && (
             <section className="panel review-panel">
               <div className="section-kicker">Sample content queue</div>
               <h2>Review before publishing</h2>
@@ -833,7 +839,7 @@ export default function App() {
           setShowAdd(open);
           if (!open) setProductError("");
         }}
-        title="Name the next thing."
+        title={CLOUD&&editingProductId!==null?"Edit product":"Name the next thing."}
         description={CLOUD?"Save a product to your authenticated cloud workspace.":"Create a session-only sample product. Reloading clears your changes."}
       >
         <form
@@ -856,6 +862,7 @@ export default function App() {
             }}
             placeholder="e.g. The Sunday Dispatch"
           />
+          {CLOUD&&<><label htmlFor="cloud-product-price">Price (USD)</label><input id="cloud-product-price" type="number" min="0" step="0.01" value={productPrice} onChange={event=>setProductPrice(event.target.value)}/></>}
           {productError && (
             <p id="product-error" role="alert">
               {productError}
@@ -870,7 +877,7 @@ export default function App() {
               Cancel
             </button>
             <button type="submit" className="primary-button" disabled={CLOUD&&cloud.status!=='ready'}>
-              <Plus size={15} /> Add to stack
+              <Plus size={15} /> {CLOUD&&editingProductId!==null?'Save product changes':'Add to stack'}
             </button>
           </div>
         </form>
