@@ -150,7 +150,11 @@ describe.skipIf(!enabled)("session revocation with actual MySQL (no DB mocks)", 
     async function call(path: string, token?: string, method = "GET") {
       return fetch(base + path, {
         method,
-        headers: token ? { cookie: COOKIE_NAME + "=" + token } : {},
+        headers: {
+          ...(token ? { cookie: COOKIE_NAME + "=" + token } : {}),
+          ...(method === "POST" ? { "content-type": "application/json" } : {}),
+        },
+        ...(method === "POST" ? { body: JSON.stringify({ json: null }) } : {}),
       });
     }
     async function identity(token?: string) {
