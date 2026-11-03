@@ -68,6 +68,25 @@
 ## New interactive session policy — draft branch only
 - The OAuth callback now issues seven-day sessions using `ONE_WEEK_MS`; the matching cookie Max-Age and JWT expiry are derived from the same duration.
 - A regression test asserts the shorter token and cookie lifetime with mocked provider and user persistence.
-- Already-issued one-year sessions remain valid until their signed `exp` after deployment unless an explicit revocation plan is implemented.
-- No server-side session revocation is implemented. This remains a release gate for elevated-risk deployments; never claim cookie clearing revokes an already stolen token.
+- Previously issued interactive sessions without a tracked `jti` will be rejected by this draft implementation after deployment, even if their JWT `exp` is still in the future. Plan a controlled re-login and rollback.
+- Server-side revocation is implemented on this draft branch and verified through the actual SDK/database/tRPC logout functions against disposable MySQL. It is not deployed or verified on a live provider-backed browser journey.
 - Live Manus OAuth callback and user database schema/migrations remain unverified against the actual production environment.
+
+
+## Application-path MySQL verification — 2026-11-03
+
+- Application/test head: `41950633a3e75f085190337b7eb577a475bcec68`.
+- Real MySQL integration run: https://github.com/Marjanfarhad/crosboard/actions/runs/41559440662 — passed; logs confirm one executed scenario, not a skipped test.
+- The test applies `docs/sql/auth-sessions-staging.sql` to a new disposable local MySQL 8.4 database and uses actual SDK issuance/authentication, Drizzle database functions and the tRPC logout resolver. It verifies hashed identifiers, post-logout replay rejection, preservation of another user's session, expired/unknown/wrong-owner record rejection, and failure/recovery with the session table unavailable.
+- No database mocks are used. Request/response objects and users are synthetic. OAuth exchange, HTTP transport, browser cookies and actual provider login are outside this integration test.
+- Full CI on that head passed: https://github.com/Marjanfarhad/crosboard/actions/runs/41559440444 (TypeScript/unit tests, Playwright, static build and Lighthouse).
+- Docker checks on that head passed: https://github.com/Marjanfarhad/crosboard/actions/runs/41559440433. Scan success does not mean zero findings.
+
+## Live OAuth target check — 2026-11-03
+
+- The existing documented Manus URL, https://crosrevenue-9fdtk8rn.manus.space/, opened in the connected browser.
+- The inspected dashboard did not expose login/logout controls. Its mobile menu button displayed a message to use desktop sidebar navigation instead of opening a menu.
+- The inspected `client/src/App.tsx` has no auth/login/logout/tRPC references. Existing source-reconciliation warnings in `docs/website-review.md` remain applicable; a loaded dashboard does not establish the deployed source, authentication or database persistence.
+- GitHub Pages is documented as a static frontend and cannot establish Node API/MySQL session enforcement.
+- **Blocked:** provider-backed browser login/logout verification requires an identified staging URL running this exact candidate backend, an isolated migrated database, and matching provider callback/project configuration. No such target was established by this check.
+- Do not deploy to an existing site, copy production credentials, or claim live OAuth success to close this gap. Obtain the exact staging target or prepare a separately reviewed staging deployment.
