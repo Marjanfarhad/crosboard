@@ -15,7 +15,7 @@ function fixture(){
  const env={ACCESS_ISSUER:'https://qa.cloudflareaccess.com',ACCESS_AUD:'qa-app',DB:{prepare(query){let args=[];return {bind(...v){args=v;return this;},async first(){return sql.prepare(query).get(...args)??null;},async run(){return {meta:{changes:sql.prepare(query).run(...args).changes}};}};}}};
  const api=createApi(async()=>Response.json({keys:[jwk]}));
  async function call(jwt,method='GET',body,origin='https://app.test'){
-  return api(new Request('https://app.test/api/workspace',{method,headers:{...(jwt?{'Cf-Access-Jwt-Assertion':jwt}:{}),'content-type':'application/json',origin},...(body?{body:JSON.stringify(body)}:{})}),env);
+  return api(new Request('https://app.test/api/workspace',{method,headers:{...(jwt?{'Cf-Access-Jwt-Assertion':jwt}:{}),'content-type':'application/json','x-command-account':jwt&&jwt.split('.').length===3?JSON.parse(Buffer.from(jwt.split('.')[1],'base64url')).sub:'',origin},...(body?{body:JSON.stringify(body)}:{})}),env);
  }
  return {call,env,sql,api};
 }
@@ -41,3 +41,15 @@ test('missing bindings and database failures fail closed',async()=>{
  const f=fixture(),t=await token('a');assert.equal((await f.api(new Request('https://app.test/api/workspace'),{})).status,503);
  f.sql.exec('DROP TABLE workspaces');assert.equal((await f.call(t)).status,503);f.sql.close();
 });
+
+test('an account switch cannot save a previous account document',async()=>{
+ const f=fixture();
+ const response=await f.api(new Request('https://app.test/api/workspace',{
+  method:'PUT',headers:{'Cf-Access-Jwt-Assertion':await token('b'),'content-type':'application/json',origin:'https://app.test','x-command-account':'a'},
+  body:JSON.stringify({revision:0,data:{videos:['private-a']}})
+ }),f.env);
+ assert.equal(response.status,409);
+ assert.equal((await (await f.call(await token('b'))).json()).data,null);
+ f.sql.close();
+});
+

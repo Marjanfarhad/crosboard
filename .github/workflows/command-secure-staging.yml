@@ -1,0 +1,63 @@
+name: Command secure staging
+on:
+  push:
+    branches: [fix/cloudflare-worker-recovery-20261103]
+    paths:
+      - ops/cloudflare-secure-staging/**
+      - .github/workflows/command-secure-staging.yml
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the separate staging Worker using configured D1 and Access application
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: command-secure-staging
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Authentication and isolation regression tests
+        working-directory: ops/cloudflare-secure-staging
+        run: |
+          node api.test.mjs
+          node worker.test.mjs
+      - name: Check Cloudflare token and existing resources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+        run: python3 ops/cloudflare-secure-staging/preflight.py
+      - name: Prepare staging configuration
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy
+        working-directory: ops/cloudflare-secure-staging
+        env:
+          D1_ID: ${{ vars.COMMAND_STAGING_D1_ID }}
+          ACCESS_AUD: ${{ vars.COMMAND_STAGING_ACCESS_AUD }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          db, aud = os.environ['D1_ID'], os.environ['ACCESS_AUD']
+          if not re.fullmatch(r'[a-f0-9-]{36}', db) or not re.fullmatch(r'[a-f0-9]{64}', aud):
+              raise SystemExit('Configure COMMAND_STAGING_D1_ID and COMMAND_STAGING_ACCESS_AUD first. No deployment performed.')
+          config = json.load(open('wrangler.example.json'))
+          config['d1_databases'][0]['database_id'] = db
+          config['vars']['ACCESS_AUD'] = aud
+          json.dump(config, open('wrangler.json', 'w'))
+          PY
+      - name: Deploy separate staging Worker
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy
+        working-directory: ops/cloudflare-secure-staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+        run: |
+          npx --yes wrangler@4 deploy --dry-run --config wrangler.json
+          npx --yes wrangler@4 deploy --config wrangler.json

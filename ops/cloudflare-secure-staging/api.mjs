@@ -37,6 +37,7 @@ export function createApi(fetchKeys=fetch) {
     return json(row?{revision:row.revision,data:JSON.parse(row.document)}:{revision:0,data:null});
    }
    if(request.method!=='PUT')return json({error:'Method not allowed'},405);
+   if(request.headers.get('x-command-account')!==owner)return json({error:'Account changed; reload before saving'},409);
    if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'Origin rejected'},403);
    if(!request.headers.get('content-type')?.startsWith('application/json'))return json({error:'JSON required'},415);
    const reader=request.body?.getReader();let chunks=[],length=0;
@@ -55,3 +56,4 @@ export function createApi(fetchKeys=fetch) {
  };
 }
 export default {fetch:createApi()};
+

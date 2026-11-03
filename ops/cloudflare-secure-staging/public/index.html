@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Command — Find what sells, post more of it</title>
+<meta name="description" content="Command helps small TikTok Shop sellers log video performance and find which hooks and products actually earn, instead of guessing what to post next.">
+<meta name="theme-color" content="#1B1420">
+<meta property="og:title" content="Command">
+<meta property="og:description" content="Turn shop data into the next video that sells.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AF%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1B1420;--ink2:#241B2B;--panel:#2A2033;--gold:#E8A33D;--gold-soft:#F0C374;--teal:#3FA796;--cream:#F3EDE3;--muted:#B9AEC2;--line:#40334A;--danger:#D9695F;}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--ink:#FAF7F1;--ink2:#F1EBDD;--panel:#FFFFFF;--cream:#241B2B;--muted:#6B6076;--line:#E3D9C9;}}
+:root[data-theme="light"]{--ink:#FAF7F1;--ink2:#F1EBDD;--panel:#FFFFFF;--cream:#241B2B;--muted:#6B6076;--line:#E3D9C9;}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+body{margin:0;background:var(--ink);color:var(--cream);font-family:'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+a{color:var(--gold-soft);}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;background:var(--gold);color:#241708;border:none;border-radius:8px;padding:10px 16px;font-weight:600;font-size:14px;cursor:pointer;font-family:inherit;}
+.btn.secondary{background:transparent;color:var(--cream);border:1px solid var(--line);}
+.btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);}
+.btn:disabled{opacity:.55;cursor:not-allowed;}
+.row{display:flex;gap:10px;flex-wrap:wrap;}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px;}
+input,textarea,select{width:100%;background:var(--ink2);border:1px solid var(--line);color:var(--cream);border-radius:8px;padding:11px;font-family:inherit;font-size:14px;min-height:44px;}
+textarea{resize:vertical;min-height:70px;}
+.field{margin-bottom:14px;}
+.err{color:var(--danger);font-size:12px;margin-top:4px;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;color:var(--muted);font-weight:500;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap;}
+.insight{background:var(--ink2);border-left:3px solid var(--gold);border-radius:6px;padding:12px 14px;font-size:13px;margin-bottom:10px;}
+.pill{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--ink2);color:var(--teal);border:1px solid var(--line);}
+.rowitem{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap;}
+.rowitem:last-child{border-bottom:none;}
+.toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--gold);padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:50;}
+.toast.show{opacity:1;}
+.empty{border:1px dashed var(--line);border-radius:10px;padding:28px 18px;text-align:center;color:var(--muted);font-size:13px;}
+.empty .icon{font-size:28px;margin-bottom:8px;}
+/* Landing */
+.lp-nav{position:sticky;top:0;background:var(--ink);border-bottom:1px solid var(--line);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:10px;z-index:10;}
+.lp-nav .links{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;}
+.lp-nav .links a{color:var(--muted);cursor:pointer;}
+.lp-hero{max-width:640px;margin:0 auto;padding:60px 20px 30px;text-align:left;}
+.lp-hero h1{font-size:30px;line-height:1.25;margin:0 0 12px;font-weight:700;}
+.lp-hero p{color:var(--muted);font-size:15px;margin:0 0 20px;}
+.lp-features{max-width:640px;margin:0 auto;padding:0 20px 60px;display:grid;gap:14px;}
+.lp-features .card h4{margin:0 0 6px;font-size:14px;}
+.lp-features .card p{margin:0;color:var(--muted);font-size:13px;}
+/* Auth */
+.authwrap{max-width:380px;margin:60px auto;padding:0 20px;}
+.authwrap h2{margin-bottom:4px;}
+.authwrap p.sub{color:var(--muted);font-size:13px;margin-top:0;margin-bottom:20px;}
+/* App shell */
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:220px;flex-shrink:0;background:var(--ink2);border-right:1px solid var(--line);padding:16px 12px;padding-top:calc(16px + env(safe-area-inset-top,0px));}
+.sidebar .grp{margin-bottom:18px;}
+.sidebar .grp .grptitle{font-size:11px;color:var(--muted);padding:0 10px;margin-bottom:6px;}
+.sidebar button.navitem{display:block;width:100%;text-align:left;background:none;border:none;color:var(--cream);font-family:inherit;font-size:13px;padding:10px;border-radius:8px;cursor:pointer;min-height:44px;}
+.sidebar button.navitem.active{background:var(--panel);color:var(--gold-soft);font-weight:600;}
+.main{flex:1;min-width:0;}
+.topbar{position:sticky;top:0;background:var(--ink);border-bottom:1px solid var(--line);padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;display:flex;align-items:center;gap:12px;z-index:5;}
+.hamburger{display:none;background:none;border:1px solid var(--line);color:var(--cream);border-radius:8px;width:44px;height:44px;cursor:pointer;font-size:18px;}
+main.content{padding:18px 20px 60px;max-width:640px;}
+.hero h2{font-size:22px;margin:6px 0 6px;font-weight:600;}
+.hero p{color:var(--muted);font-size:14px;margin:0;}
+section{margin:26px 0;}
+section h3{font-size:14px;margin:0 0 10px;font-weight:600;}
+@media (max-width:900px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s;z-index:20;width:240px;}
+  .sidebar.open{transform:translateX(0);}
+  .hamburger{display:block;}
+  .scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:15;}
+  .scrim.show{display:block;}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+var STORE_KEY='command_videos_v1', REM_KEY='command_reminders_v1', PROD_KEY='command_products_v1',
+    NOTE_KEY='command_notes_v1', AUTH_KEY='command_auth_v1', CONN_KEY='command_connected_v1';
+var videos=[], reminders=[], products=[], notes=[], connected=false, user=null;
+var view='app', cloudRevision=0, cloudOwner=null, cloudReady=false, cloudFailed=false;
+var saveQueue=Promise.resolve(), pendingSaves=0;
+function syncStatus(message){ document.getElementById('cloudStatus').textContent=message; }
+function cloudError(message){
+  cloudFailed=true; cloudReady=false; syncStatus(message);
+  var dialog=document.createElement('div');
+  dialog.style.cssText='position:fixed;inset:0;z-index:99999;background:#10131fee;color:white;padding:30px;overflow:auto';
+  var text=document.createElement('p'); text.textContent=message+' Editing is paused. Download your unsaved workspace before reloading.'; dialog.appendChild(text);
+  var exportButton=document.createElement('button'); exportButton.textContent='Download unsaved workspace';
+  exportButton.onclick=function(){var link=document.createElement('a');link.href=URL.createObjectURL(new Blob([JSON.stringify(workspace())],{type:'application/json'}));link.download='command-unsaved.json';link.click();setTimeout(function(){URL.revokeObjectURL(link.href);},1000);};dialog.appendChild(exportButton);
+  var reload=document.createElement('button');reload.textContent='Reload cloud workspace';reload.onclick=function(){if(confirm('Discard unsaved changes and reload?'))location.reload();};dialog.appendChild(reload);document.body.appendChild(dialog);
+}
+function workspace(){return {videos:videos,reminders:reminders,products:products,notes:notes};}
+async function cloudRequest(path,options){
+  var response=await fetch(path,Object.assign({credentials:'same-origin',cache:'no-store',redirect:'error'},options));
+  if(!response.ok)throw new Error(response.status===409?'Workspace changed or account switched.':response.status===401?'Your session expired.':'Cloud request failed ('+response.status+').');
+  if(!(response.headers.get('content-type')||'').includes('application/json'))throw new Error('Sign in again to continue.');
+  return response.json();
+}
+function persist(){
+  if(!cloudReady||cloudFailed)return;
+  var snapshot=JSON.parse(JSON.stringify(workspace()));pendingSaves++;syncStatus('Saving to cloud…');
+  saveQueue=saveQueue.then(async function(){
+    if(cloudFailed)return;
+    var result=await cloudRequest('/api/workspace',{method:'PUT',headers:{'content-type':'application/json','x-command-account':cloudOwner},body:JSON.stringify({revision:cloudRevision,data:snapshot})});
+    cloudRevision=result.revision;pendingSaves--;if(!pendingSaves)syncStatus('Saved to cloud');
+  }).catch(function(error){cloudError(error.message);});
+}
+window.addEventListener('beforeunload',function(event){if(pendingSaves){event.preventDefault();event.returnValue='';}});
+async function startCloud(){
+  var status=document.createElement('div');status.id='cloudStatus';status.setAttribute('role','status');status.style.cssText='padding:10px;text-align:center';status.textContent='Loading secure workspace…';document.body.prepend(status);
+  try{
+    var account=await cloudRequest('/api/account');cloudOwner=account.userId;
+    var saved=await cloudRequest('/api/workspace');
+    if(!Number.isSafeInteger(saved.revision)||saved.revision<0)throw new Error('Invalid cloud revision.');
+    var data=saved.data||{};
+    ['videos','reminders','products','notes'].forEach(function(key){if(data[key]!==undefined&&!Array.isArray(data[key]))throw new Error('Invalid cloud workspace.');});
+    videos=data.videos||[];reminders=data.reminders||[];products=data.products||[];notes=data.notes||[];
+    cloudRevision=saved.revision;user={name:'Cloudflare Access account',email:''};cloudReady=true;render();syncStatus('Cloud workspace loaded');
+  }catch(error){cloudError(error.message);}
+}
+
+var page = 'dashboard';
+var sidebarOpen = false;
+var editingId = null, prefillDraft = null, analystA = null, analystB = null;
+var downloadsNS = null;
+if (window.claude && window.claude.use){ window.claude.use('downloads').then(function(ns){ downloadsNS = ns; }).catch(function(){}); }
+async function downloadFile(filename, data, mime){
+  if (downloadsNS){
+    try { await downloadsNS.save({filename: filename, data: data}); return true; } catch(err){ if (err && err.code === 'declined') return false; }
+  }
+  try {
+    var blob = new Blob([data], {type: mime || 'text/plain'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    return true;
+  } catch(err){ return false; }
+}
+
+function uid(){ return 'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function num(v){ var n=parseFloat(v); return isFinite(n)?n:0; }
+function fmt$(n){ return '$'+(Math.round(n*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtPct(n){ return (Math.round(n*10)/10)+'%'; }
+function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(function(){t.classList.remove('show');},1800); }
+function hoursSince(ts){ return (Date.now()-ts)/3600000; }
+
+function metrics(v){
+  var rpm = v.views>0 ? (v.commission/v.views)*1000 : 0;
+  var ctr = v.views>0 ? (v.clicks/v.views)*100 : 0;
+  var conv = v.clicks>0 ? (v.orders/v.clicks)*100 : 0;
+  return {rpm:rpm, ctr:ctr, conv:conv};
+}
+function totals(){
+  var t={views:0,clicks:0,orders:0,commission:0,gmv:0};
+  videos.forEach(function(v){ t.views+=v.views; t.clicks+=v.clicks; t.orders+=v.orders; t.commission+=v.commission; t.gmv+=v.gmv; });
+  t.rpm = t.views>0 ? (t.commission/t.views)*1000 : 0;
+  t.ctr = t.views>0 ? (t.clicks/t.views)*100 : 0;
+  t.conv = t.clicks>0 ? (t.orders/t.clicks)*100 : 0;
+  return t;
+}
+var STOPWORDS=['the','a','an','to','of','in','on','for','and','or','but','you','your','this','that','with','without','at','is','are','it','i','my','me','so','not','just','if','how','why','what','was','were','be','been','do','did','have','has','had','from','up','out','than','then'];
+function extractKeywords(hook){ return String(hook||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').split(/\s+/).filter(function(w){return w.length>2 && STOPWORDS.indexOf(w)===-1;}); }
+function confidenceLabel(n){ if(n<3) return 'early signal'; if(n<6) return 'developing'; return 'reliable'; }
+function groupPatterns(getKeys){
+  var map={};
+  videos.forEach(function(v){
+    var m=metrics(v), seen={};
+    getKeys(v).forEach(function(k){ if(!k||seen[k])return; seen[k]=true; if(!map[k])map[k]={count:0,rpmSum:0}; map[k].count++; map[k].rpmSum+=m.rpm; });
+  });
+  return Object.keys(map).map(function(k){return {key:k,count:map[k].count,avgRpm:map[k].rpmSum/map[k].count};}).filter(function(a){return a.count>=2;}).sort(function(a,b){return b.avgRpm-a.avgRpm;});
+}
+function keywordPatterns(){ return groupPatterns(function(v){return extractKeywords(v.hook);}); }
+function productPatterns(){ return groupPatterns(function(v){return v.product?[v.product.trim().toLowerCase()]:[];}); }
+function insightsTableHtml(rows,label){
+  if(!rows.length) return '';
+  var html='<div class="tablewrap"><table><thead><tr><th>'+label+'</th><th>Videos</th><th>Avg RPM</th><th>Confidence</th></tr></thead><tbody>';
+  rows.slice(0,5).forEach(function(r){ html+='<tr><td>'+esc(r.key)+'</td><td class="mono">'+r.count+'</td><td class="mono">'+fmt$(r.avgRpm)+'</td><td><span class="pill">'+confidenceLabel(r.count)+'</span></td></tr>'; });
+  html+='</tbody></table></div>'; return html;
+}
+function weeklyTrend(){
+  var b={};
+  videos.forEach(function(v){ var wk=Math.floor((v.loggedAt||Date.now())/(7*24*3600*1000)); if(!b[wk])b[wk]={commission:0}; b[wk].commission+=v.commission; });
+  return Object.keys(b).map(Number).sort(function(a,c){return a-c;}).map(function(wk){return {commission:b[wk].commission};});
+}
+function trendChartHtml(){
+  var data=weeklyTrend();
+  if(data.length<2) return '<div class="empty">Log videos across more than one week to see a trend.</div>';
+  var barW=44,gap=14,h=100,w=data.length*(barW+gap),max=Math.max.apply(null,data.map(function(d){return d.commission;}))||1;
+  var bars=data.map(function(d,i){var bh=Math.max(4,(d.commission/max)*h),x=i*(barW+gap),y=h-bh;
+    return '<rect x="'+x+'" y="'+y+'" width="'+barW+'" height="'+bh+'" rx="4" style="fill:var(--gold);"></rect><text x="'+(x+barW/2)+'" y="'+(h+16)+'" font-size="9" text-anchor="middle" style="fill:var(--muted);">W'+(i+1)+'</text>';}).join('');
+  return '<svg viewBox="0 0 '+w+' '+(h+24)+'" style="width:100%;height:130px;">'+bars+'</svg><div class="sub" style="color:var(--muted);font-size:12px;">Commission per week, oldest to newest.</div>';
+}
+function parseCsv(text){
+  var rows=[],i=0,field='',row=[],inQ=false;
+  function pf(){row.push(field);field='';} function pr(){pf();rows.push(row);row=[];}
+  while(i<text.length){var c=text[i];
+    if(inQ){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i+=2;continue;} inQ=false;i++;continue;} field+=c;i++;continue; }
+    else { if(c==='"'){inQ=true;i++;continue;} if(c===','){pf();i++;continue;} if(c==='\r'){i++;continue;} if(c==='\n'){pr();i++;continue;} field+=c;i++;continue; }
+  }
+  if(field.length||row.length) pr();
+  if(!rows.length) return [];
+  var header=rows[0].map(function(h){return h.trim().toLowerCase();});
+  return rows.slice(1).filter(function(r){return r.length>1||(r[0]||'').trim();}).map(function(r){var o={};header.forEach(function(h,idx){o[h]=r[idx];});return o;});
+}
+function importRowsAsVideos(rows){
+  var added=0;
+  rows.forEach(function(o){ var title=(o.title||'').trim(); if(!title) return;
+    videos.push({id:uid(),loggedAt:Date.now(),title:title,hook:(o.hook||'').trim(),product:(o.product||'').trim(),views:num(o.views),clicks:num(o.clicks),orders:num(o.orders),commission:num(o.commission),gmv:num(o.gmv)}); added++; });
+  return added;
+}
+function toCsv(){
+  var header=['title','hook','product','views','clicks','orders','commission','gmv','rpm'];
+  var lines=[header.join(',')];
+  videos.forEach(function(v){ var m=metrics(v);
+    var row=[v.title,v.hook,v.product||'',v.views,v.clicks,v.orders,v.commission,v.gmv,m.rpm.toFixed(2)];
+    lines.push(row.map(function(c){var s=String(c==null?'':c);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(','));
+  });
+  return lines.join('\n');
+}
+
+function field(name,label,placeholder,opts){
+  opts=opts||{};
+  var input = opts.textarea
+    ? '<textarea id="'+name+'" name="'+name+'" placeholder="'+placeholder+'">'+ (opts.value?esc(opts.value):'') +'</textarea>'
+    : '<input id="'+name+'" name="'+name+'" type="'+(opts.type||'text')+'" placeholder="'+placeholder+'" value="'+(opts.value?esc(opts.value):'')+'">';
+  return '<div class="field">'+'<label for="'+name+'">'+label+'</label>'+input+'<div class="err" id="err_'+name+'"></div></div>';
+}
+function numField(name,label,placeholder){ return '<div class="field"><label for="'+name+'">'+label+'</label><input id="'+name+'" name="'+name+'" type="number" step="any" min="0" placeholder="'+placeholder+'"></div>'; }
+function setErr(name,msg){ var el=document.getElementById('err_'+name); if(el) el.textContent=msg||''; }
+function isEmail(s){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+function emptyState(icon,text,ctaLabel,onClick){
+  var id='cta_'+uid();
+  setTimeout(function(){ var b=document.getElementById(id); if(b) b.onclick=onClick; },0);
+  return '<div class="empty"><div class="icon">'+icon+'</div><p>'+text+'</p><button class="btn" id="'+id+'">'+ctaLabel+'</button></div>';
+}
+
+var NAV=[
+  {label:'Overview', items:[{id:'dashboard',label:'Dashboard'}]},
+  {label:'Business', items:[{id:'products',label:'Products'},{id:'performance',label:'Performance'},{id:'analyst',label:'Analyst'},{id:'next',label:'Next'}]},
+  {label:'Creative', items:[{id:'studio',label:'Studio'},{id:'videolog',label:'Video Log'},{id:'creative',label:'Creative Editor'}]},
+  {label:'App', items:[{id:'connect',label:'Connect'},{id:'settings',label:'Settings'}]}
+];
+var ALL_PAGES=[]; NAV.forEach(function(g){g.items.forEach(function(i){ALL_PAGES.push(i);});});
+
+function render(){
+  document.getElementById('app').innerHTML=renderShell();
+  wire();
+}
+
+function renderShell(){
+  var g = ALL_PAGES.find(function(p){return p.id===page;});
+  var title = g ? g.label : 'Dashboard';
+  var sb = '<div class="sidebar'+(sidebarOpen?' open':'')+'" id="sidebar">'+
+    NAV.map(function(grp){
+      return '<div class="grp"><div class="grptitle">'+grp.label+'</div>'+
+        grp.items.map(function(it){
+          return '<button class="navitem'+(it.id===page?' active':'')+'" data-nav="'+it.id+'">'+it.label+'</button>';
+        }).join('') + '</div>';
+    }).join('') +
+    '<div class="grp"><button class="navitem" id="signOutBtn">Sign out</button></div></div>';
+  var scrim = '<div class="scrim'+(sidebarOpen?' show':'')+'" id="scrim"></div>';
+  var top = '<div class="topbar"><button class="hamburger" id="hamburger" aria-expanded="'+(sidebarOpen?'true':'false')+'" aria-label="Toggle navigation">&#9776;</button><strong>'+title+'</strong></div>';
+  return '<div class="shell">'+sb+scrim+'<div class="main">'+top+'<main class="content" id="content"></main></div></div>';
+}
+
+function setContent(html){ document.getElementById('content').innerHTML = html; }
+
+function renderDashboard(){
+  var t=totals();
+  var due=reminders.filter(function(r){return hoursSince(r.postedAt)>=24;});
+  var html='';
+  if(due.length){ html+='<section style="margin-top:0;"><h3>Ready to log</h3>'+due.map(function(r){
+    return '<div class="insight" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><span>"'+esc(r.title)+'" was posted '+Math.floor(hoursSince(r.postedAt))+'h ago. Log the results?</span>'+
+      '<span class="row"><button class="btn secondary" data-log-reminder="'+r.id+'">Log now</button><button class="btn secondary" data-dismiss-reminder="'+r.id+'">Dismiss</button></span></div>';
+  }).join('')+'</section>'; }
+  html+='<div class="hero"><h2>Turn shop data into the next video that sells.</h2><p>Find what sells. Create more of it. Stop guessing what to post.</p></div>';
+  html+='<div class="grid">'+
+    kcard('Commission',fmt$(t.commission),videos.length+' logged video'+(videos.length===1?'':'s'))+
+    kcard('GMV',fmt$(t.gmv), videos.reduce(function(a,v){return a+v.orders;},0)+' orders')+
+    kcard('Rev / 1,000 views',fmt$(t.rpm))+
+    kcard('Product CTR',fmtPct(t.ctr), fmtPct(t.conv)+' click \u2192 order')+
+    '</div>';
+  html+='<section><h3>Patterns in this account</h3>';
+  if(videos.length<2){ html+=emptyStr('Log at least two videos to see patterns.'); }
+  else { html+=patternsHtml(); }
+  html+='</section>';
+  html+='<section><h3>Highest RPM videos</h3>'+tableHtml(videos.slice().sort(function(a,b){return metrics(b).rpm-metrics(a).rpm;}).slice(0,3))+'</section>';
+  setContent(html);
+}
+function kcard(label,value,sub){ return '<div class="card"><div style="font-size:11px;color:var(--muted);margin-bottom:6px;">'+label+'</div><div class="mono" style="font-size:22px;font-weight:700;color:var(--gold-soft);">'+value+'</div>'+(sub?'<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+sub+'</div>':'')+'</div>'; }
+function emptyStr(text){ return '<div class="empty">'+text+'</div>'; }
+function tableHtml(rows){
+  if(!rows.length) return '<div class="empty">No videos logged yet.</div>';
+  var html='<div class="tablewrap"><table><thead><tr><th>Video</th><th>Hook</th><th>Views</th><th>RPM</th><th>Commission</th></tr></thead><tbody>';
+  rows.forEach(function(v){ var m=metrics(v); html+='<tr><td>'+esc(v.title)+'</td><td>'+esc(v.hook||'\u2014')+'</td><td class="mono">'+v.views.toLocaleString()+'</td><td class="mono">'+fmt$(m.rpm)+'</td><td class="mono">'+fmt$(v.commission)+'</td></tr>'; });
+  html+='</tbody></table></div>'; return html;
+}
+function patternsHtml(){
+  var withM=videos.map(function(v){return {v:v,m:metrics(v)};}).sort(function(a,b){return b.m.rpm-a.m.rpm;});
+  var best=withM[0]; var avg=withM.reduce(function(a,r){return a+r.m.rpm;},0)/withM.length;
+  var lift = avg>0 ? ((best.m.rpm-avg)/avg)*100 : 0;
+  var html='<div class="insight"><strong>'+esc(best.v.title)+'</strong> earns '+fmt$(best.m.rpm)+' per 1,000 views \u2014 '+(lift>0?fmtPct(lift)+' above your account average':'your current best')+'. Hook: "'+esc(best.v.hook||'\u2014')+'"<br><span class="pill" style="margin-top:6px;display:inline-block;">'+confidenceLabel(videos.length)+' \u00b7 '+videos.length+' videos</span></div>';
+  var kw=keywordPatterns(), pp=productPatterns();
+  if(kw.length) html+='<h3 style="margin:16px 0 8px;font-size:13px;">Hook keywords by RPM</h3>'+insightsTableHtml(kw,'Keyword');
+  if(pp.length) html+='<h3 style="margin:16px 0 8px;font-size:13px;">Products by RPM</h3>'+insightsTableHtml(pp,'Product');
+  html+='<h3 style="margin:16px 0 8px;font-size:13px;">Trend</h3>'+trendChartHtml();
+  return html;
+}
+
+function renderProducts(){
+  var html='<div class="hero"><h2>Products</h2><p>Track the products you feature in your videos.</p></div>';
+  if(!products.length){ html+=emptyState('\ud83d\uddc3\ufe0f','Add your first product to start tagging videos with what they sell.','Add a product', function(){ showProductForm(); }); }
+  else {
+    html+='<div class="row" style="margin-bottom:14px;"><button class="btn" id="addProductBtn">Add product</button></div>';
+    html+=products.map(function(p){ return '<div class="rowitem"><div><div style="font-weight:600;">'+esc(p.name)+'</div><div class="sub mono" style="color:var(--muted);font-size:12px;">'+fmt$(p.price||0)+'</div></div><button class="btn danger" data-del-product="'+p.id+'" style="min-height:36px;">Remove</button></div>'; }).join('');
+  }
+  html+='<div id="productFormWrap"></div>';
+  setContent(html);
+  var af=document.getElementById('addProductBtn'); if(af) af.onclick=function(){ showProductForm(); };
+  document.querySelectorAll('[data-del-product]').forEach(function(b){ b.onclick=function(){ products=products.filter(function(p){return p.id!==b.getAttribute('data-del-product');}); persist(PROD_KEY,products); renderProducts(); }; });
+}
+function showProductForm(){
+  var wrap=document.getElementById('productFormWrap');
+  if(!wrap){ renderProducts(); wrap=document.getElementById('productFormWrap'); }
+  wrap.innerHTML='<form id="prodForm" style="margin-top:16px;">'+field('pname','Product name','e.g. Desk organizer')+numField('pprice','Price ($)','0')+'<button class="btn" type="submit">Save product</button></form>';
+  document.getElementById('prodForm').onsubmit=function(e){
+    e.preventDefault(); var f=e.target; var name=f.pname.value.trim();
+    setErr('pname',''); if(!name){ setErr('pname','Product name is required.'); return; }
+    products.push({id:uid(),name:name,price:num(f.pprice.value)}); persist(PROD_KEY,products); toast('Product added'); renderProducts();
+  };
+}
+
+function renderStudio(){
+  var editingVideo = editingId ? videos.find(function(v){return v.id===editingId;}) : null;
+  var draft = (!editingVideo && prefillDraft) ? prefillDraft : null;
+  if(!videos.length && !editingVideo){
+    var html=emptyState('\ud83c\udfa5','Log your first video to start tracking what sells.','Log a video', function(){ openStudioForm(); });
+    html+='<div id="studioFormWrap"></div>';
+    setContent(html);
+    return;
+  }
+  buildStudio(editingVideo, draft);
+}
+function openStudioForm(){ var w=document.getElementById('studioFormWrap'); if(w){ buildStudioForm(null,null,w); } else { editingId=null; buildStudio(null,null); } }
+function buildStudio(editingVideo, draft){
+  var html='<div class="hero"><h2>Just posted a video?</h2><p>Set a reminder now, log real numbers once they land.</p></div>';
+  html+='<form id="reminderForm" class="row" style="align-items:flex-end;margin-bottom:22px;"><div style="flex:1;min-width:140px;">'+field('remTitle','Video title','What did you just post?')+'</div><button type="submit" class="btn secondary">Remind me in 24h</button></form>';
+  html+='<div id="studioFormWrap"></div>';
+  html+='<section><h3>Logged videos</h3>'+(videos.length? videos.slice().reverse().map(function(v){
+    return '<div class="rowitem"><div><div style="font-weight:600;">'+esc(v.title)+'</div><div class="sub mono" style="color:var(--muted);font-size:12px;">'+v.views.toLocaleString()+' views \u00b7 '+fmt$(v.commission)+(v.product?' \u00b7 '+esc(v.product):'')+'</div></div>'+
+      '<div class="row" style="gap:6px;"><button class="btn secondary" data-edit="'+v.id+'" style="min-height:36px;">Edit</button><button class="btn danger" data-del="'+v.id+'" style="min-height:36px;">Remove</button></div></div>';
+  }).join('') : '<div class="empty">Nothing logged yet.</div>')+'</section>';
+  setContent(html);
+  document.getElementById('reminderForm').onsubmit=function(e){ e.preventDefault(); var t=e.target.remTitle.value.trim(); if(!t)return; reminders.push({id:uid(),title:t,postedAt:Date.now()}); persist(REM_KEY,reminders); toast('Reminder set'); e.target.remTitle.value=''; };
+  document.querySelectorAll('[data-edit]').forEach(function(b){ b.onclick=function(){ editingId=b.getAttribute('data-edit'); page='studio'; renderPage(); }; });
+  document.querySelectorAll('[data-del]').forEach(function(b){ b.onclick=function(){ videos=videos.filter(function(v){return v.id!==b.getAttribute('data-del');}); persist(STORE_KEY,videos); toast('Removed'); renderPage(); }; });
+  buildStudioForm(editingVideo, draft, document.getElementById('studioFormWrap'));
+}
+function buildStudioForm(editingVideo, draft, wrap){
+  var h='<div class="hero" style="margin-top:0;"><h2>'+(editingVideo?'Edit video':'Log a video')+'</h2></div><form id="logForm">'+
+    field('title','Video title','e.g. "3 desk organizers I actually use"', {value: draft?draft.title:(editingVideo?editingVideo.title:'')})+
+    field('hook','Hook (opening line)','e.g. "Stop buying desk organizers until you see this"', {textarea:true, value: draft?draft.hook:(editingVideo?editingVideo.hook:'')})+
+    field('product','Product / category','e.g. "desk organizer"', {value: draft?draft.product:(editingVideo?editingVideo.product:'')})+
+    numField('views','Views','0')+numField('clicks','Product page clicks','0')+numField('orders','Orders','0')+numField('commission','Commission earned ($)','0')+numField('gmv','GMV attributed ($)','0')+
+    '<div class="row"><button type="submit" class="btn" id="logSubmit">'+(editingVideo?'Save changes':'Log video')+'</button>'+(editingVideo?'<button type="button" class="btn secondary" id="cancelEdit">Cancel</button>':'')+'</div></form>';
+  wrap.innerHTML=h;
+  if(editingVideo){ var f=document.getElementById('logForm'); f.views.value=editingVideo.views; f.clicks.value=editingVideo.clicks; f.orders.value=editingVideo.orders; f.commission.value=editingVideo.commission; f.gmv.value=editingVideo.gmv;
+    document.getElementById('cancelEdit').onclick=function(){ editingId=null; renderPage(); }; }
+  prefillDraft=null;
+  document.getElementById('logForm').onsubmit=function(e){
+    e.preventDefault(); var f=e.target; setErr('title','');
+    var title=f.title.value.trim();
+    if(!title){ setErr('title','Video title is required.'); return; }
+    var btn=document.getElementById('logSubmit'); btn.disabled=true; btn.textContent='Saving\u2026';
+    var data={title:title,hook:f.hook.value.trim(),product:f.product.value.trim(),views:num(f.views.value),clicks:num(f.clicks.value),orders:num(f.orders.value),commission:num(f.commission.value),gmv:num(f.gmv.value)};
+    setTimeout(function(){
+      if(editingVideo){ Object.assign(editingVideo,data); editingId=null; persist(STORE_KEY,videos); toast('Video updated'); }
+      else { data.id=uid(); data.loggedAt=Date.now(); videos.push(data); persist(STORE_KEY,videos); toast('Video logged'); }
+      renderPage();
+    }, 400);
+  };
+}
+
+function renderVideoLog(){
+  var html='<div class="hero"><h2>Video Log</h2><p>Every video you\'ve logged, most recent first.</p></div>';
+  if(!videos.length){
+    html+=emptyState('\ud83d\udcdd','No videos logged yet. Log one from Studio, or import a CSV below.','Go to Studio', function(){ page='studio'; renderPage(); });
+  } else {
+    html+='<div class="tablewrap"><table><thead><tr><th>Video</th><th>Product</th><th>Views</th><th>RPM</th><th>Commission</th></tr></thead><tbody>';
+    videos.slice().reverse().forEach(function(v){ var m=metrics(v); html+='<tr><td>'+esc(v.title)+'</td><td>'+esc(v.product||'\u2014')+'</td><td class="mono">'+v.views.toLocaleString()+'</td><td class="mono">'+fmt$(m.rpm)+'</td><td class="mono">'+fmt$(v.commission)+'</td></tr>'; });
+    html+='</tbody></table></div>';
+    html+='<div style="margin-top:14px;text-align:right;"><button class="btn secondary" id="exportCsv">Export CSV</button></div>';
+  }
+  html+='<section><h3>Import &amp; backup</h3><div class="row">'+
+    '<button class="btn secondary" id="btnImportCsv">Import CSV</button>'+
+    '<button class="btn secondary" id="btnBackup"'+(!videos.length?' disabled':'')+'>Download backup (JSON)</button>'+
+    '<button class="btn secondary" id="btnRestore">Restore backup</button></div>'+
+    '<input type="file" id="fileImportCsv" accept=".csv" style="display:none">'+
+    '<input type="file" id="fileRestore" accept=".json" style="display:none">'+
+    '<p style="color:var(--muted);font-size:12px;margin-top:8px;">CSV needs a header row with at least a title column (hook, product, views, clicks, orders, commission, gmv optional). Restoring a backup replaces everything currently logged in this browser.</p></section>';
+  setContent(html);
+
+  var ec=document.getElementById('exportCsv');
+  if(ec) ec.onclick=async function(){
+    var ok = await downloadFile('command-videos.csv', toCsv(), 'text/csv');
+    toast(ok ? 'Downloaded' : 'Couldn\'t export right now');
+  };
+
+  document.getElementById('btnImportCsv').onclick=function(){ document.getElementById('fileImportCsv').click(); };
+  document.getElementById('fileImportCsv').onchange=function(e){
+    var file=e.target.files[0]; if(!file) return;
+    var reader=new FileReader();
+    reader.onload=function(){
+      try{ var rows=parseCsv(String(reader.result)); var added=importRowsAsVideos(rows); persist(STORE_KEY,videos); toast(added+' video'+(added===1?'':'s')+' imported'); renderVideoLog(); }
+      catch(err){ toast('Could not read that CSV'); }
+    };
+    reader.readAsText(file); e.target.value='';
+  };
+
+  document.getElementById('btnBackup').onclick=async function(){
+    var ok = await downloadFile('command-backup.json', JSON.stringify(videos,null,2), 'application/json');
+    toast(ok ? 'Backup downloaded' : 'Couldn\'t create backup right now');
+  };
+
+  document.getElementById('btnRestore').onclick=function(){ document.getElementById('fileRestore').click(); };
+  document.getElementById('fileRestore').onchange=function(e){
+    var file=e.target.files[0]; if(!file) return;
+    var reader=new FileReader();
+    reader.onload=function(){
+      try{
+        var parsed=JSON.parse(String(reader.result));
+        if(!Array.isArray(parsed)) throw new Error('not an array');
+        if(!confirm('Replace all '+videos.length+' currently logged videos with '+parsed.length+' from this backup?')) return;
+        videos=parsed.map(function(v){ return {id:v.id||uid(), loggedAt:v.loggedAt||Date.now(), title:v.title||'Untitled video', hook:v.hook||'', product:v.product||'', views:num(v.views), clicks:num(v.clicks), orders:num(v.orders), commission:num(v.commission), gmv:num(v.gmv)}; });
+        persist(STORE_KEY,videos); toast('Backup restored'); renderVideoLog();
+      } catch(err){ toast('That file isn\'t a valid backup'); }
+    };
+    reader.readAsText(file); e.target.value='';
+  };
+}
+
+function renderPerformance(){
+  if(!videos.length){ setContent(emptyState('\ud83d\udcca','Log a video to see performance data here.','Go to Studio', function(){ page='studio'; renderPage(); })); return; }
+  var html='<div class="hero"><h2>Performance</h2><p>Ranked by revenue per 1,000 views.</p></div>'+tableHtml(videos.slice().sort(function(a,b){return metrics(b).rpm-metrics(a).rpm;}));
+  setContent(html);
+}
+
+function renderAnalyst(){
+  if(videos.length<2){ setContent(emptyState('\u2696\ufe0f','Log at least two videos to compare them.','Go to Studio', function(){ page='studio'; renderPage(); })); return; }
+  if(!analystA || !videos.find(function(v){return v.id===analystA;})) analystA=videos[videos.length-1].id;
+  if(!analystB || !videos.find(function(v){return v.id===analystB;}) || analystB===analystA){ var o=videos.find(function(v){return v.id!==analystA;}); analystB=o?o.id:analystA; }
+  function opts(sel){ return videos.map(function(v){return '<option value="'+v.id+'"'+(v.id===sel?' selected':'')+'>'+esc(v.title)+'</option>';}).join(''); }
+  var a=videos.find(function(v){return v.id===analystA;}), b=videos.find(function(v){return v.id===analystB;});
+  var ma=metrics(a), mb=metrics(b);
+  var rows=[['Views',a.views,b.views,'int'],['Clicks',a.clicks,b.clicks,'int'],['Orders',a.orders,b.orders,'int'],['Commission',a.commission,b.commission,'money'],['GMV',a.gmv,b.gmv,'money'],['RPM',ma.rpm,mb.rpm,'money'],['Product CTR',ma.ctr,mb.ctr,'pct'],['Click \u2192 order',ma.conv,mb.conv,'pct']];
+  function fc(v,k){ if(k==='money') return fmt$(v); if(k==='pct') return fmtPct(v); return v.toLocaleString(); }
+  var html='<div class="hero"><h2>Analyst</h2><p>Compare two videos, metric by metric.</p></div>'+
+    '<div class="grid"><div><label for="selA">Video A</label><select id="selA">'+opts(analystA)+'</select></div><div><label for="selB">Video B</label><select id="selB">'+opts(analystB)+'</select></div></div>'+
+    '<div class="tablewrap"><table><thead><tr><th>Metric</th><th>'+esc(a.title)+'</th><th>'+esc(b.title)+'</th></tr></thead><tbody>'+
+    rows.map(function(r){ var aw=r[1]>r[2], bw=r[2]>r[1]; return '<tr><td>'+r[0]+'</td><td class="mono"'+(aw?' style="color:var(--gold-soft);font-weight:600;"':'')+'>'+fc(r[1],r[3])+'</td><td class="mono"'+(bw?' style="color:var(--gold-soft);font-weight:600;"':'')+'>'+fc(r[2],r[3])+'</td></tr>'; }).join('')+
+    '</tbody></table></div>';
+  setContent(html);
+  document.getElementById('selA').onchange=function(e){ analystA=e.target.value; renderAnalyst(); };
+  document.getElementById('selB').onchange=function(e){ analystB=e.target.value; renderAnalyst(); };
+}
+
+function renderNext(){
+  if(videos.length<2){ setContent(emptyState('\ud83d\udca1','Log at least two videos to unlock a recommendation.','Go to Studio', function(){ page='studio'; renderPage(); })); return; }
+  var withM=videos.map(function(v){return {v:v,m:metrics(v)};}).sort(function(a,b){return b.m.rpm-a.m.rpm;});
+  var best=withM[0];
+  var html='<div class="hero"><h2>Next-best content</h2><p>Recommendations use your account data. Industry heuristics are labeled.</p></div>'+
+    '<div class="insight"><strong>Make another video like "'+esc(best.v.title)+'".</strong><br><br>It runs at '+fmt$(best.m.rpm)+' per 1,000 views, your best in this account. Reuse the hook \u2014 "'+esc(best.v.hook||'\u2014')+'" \u2014 and log the result to sharpen this.</div>'+
+    '<div class="insight" style="border-color:var(--teal);"><span class="pill" style="margin-bottom:8px;display:inline-block;">industry heuristic</span><br>Videos that state the problem in the first 2 seconds tend to hold viewers into the reveal. Worth testing.</div>';
+  setContent(html);
+}
+
+function renderCreative(){
+  if(!notes.length){ var html=emptyState('\u270d\ufe0f','Draft your first video idea or script here.','New idea', function(){ showNoteForm(); }); html+='<div id="noteFormWrap"></div>'; setContent(html); return; }
+  var html='<div class="hero"><h2>Creative Editor</h2><p>Drafts and scripts for upcoming videos.</p></div><div class="row" style="margin-bottom:14px;"><button class="btn" id="addNoteBtn">New idea</button></div>';
+  html+=notes.slice().reverse().map(function(n){ return '<div class="rowitem"><div><div style="font-weight:600;">'+esc(n.title)+'</div><div class="sub" style="color:var(--muted);font-size:12px;">'+esc((n.body||'').slice(0,60))+'</div></div><button class="btn danger" data-del-note="'+n.id+'" style="min-height:36px;">Remove</button></div>'; }).join('');
+  html+='<div id="noteFormWrap"></div>';
+  setContent(html);
+  document.getElementById('addNoteBtn').onclick=function(){ showNoteForm(); };
+  document.querySelectorAll('[data-del-note]').forEach(function(b){ b.onclick=function(){ notes=notes.filter(function(n){return n.id!==b.getAttribute('data-del-note');}); persist(NOTE_KEY,notes); renderCreative(); }; });
+}
+function showNoteForm(){
+  var wrap=document.getElementById('noteFormWrap'); if(!wrap){ renderCreative(); wrap=document.getElementById('noteFormWrap'); }
+  wrap.innerHTML='<form id="noteForm" style="margin-top:16px;">'+field('ntitle','Idea title','e.g. Desk organizer haul v2')+field('nbody','Script / notes','Write your draft here', {textarea:true})+'<button class="btn" type="submit">Save idea</button></form>';
+  document.getElementById('noteForm').onsubmit=function(e){ e.preventDefault(); var f=e.target; var t=f.ntitle.value.trim(); setErr('ntitle',''); if(!t){setErr('ntitle','Title is required.');return;} notes.push({id:uid(),title:t,body:f.nbody.value.trim()}); persist(NOTE_KEY,notes); toast('Change queued for cloud save'); renderCreative(); };
+}
+
+function renderConnect(){setContent('<div class="hero"><h2>Connect</h2><p>TikTok integration is not configured. Log your metrics manually.</p></div>');}
+
+function renderSettings(){
+  var html='<div class="hero"><h2>Settings</h2><p>Your account and data.</p></div>'+
+    '<div class="card" style="margin-bottom:16px;"><div style="font-weight:600;">'+esc(user?user.name:'')+'</div><div style="color:var(--muted);font-size:13px;">'+esc(user?user.email:'')+'</div></div>'+
+    '<section><h3>Data</h3><div class="card"><p style="color:var(--muted);font-size:13px;">Clear all logged videos, products and ideas from your cloud workspace.</p><button class="btn danger" id="clearAllBtn" style="margin-top:10px;">Clear all data</button></div></section>';
+  setContent(html);
+  document.getElementById('clearAllBtn').onclick=function(){ if(confirm('Clear all data? This cannot be undone.')){ videos=[];products=[];notes=[];reminders=[]; persist(STORE_KEY,videos);persist(PROD_KEY,products);persist(NOTE_KEY,notes);persist(REM_KEY,reminders); toast('Clear queued for cloud save'); renderPage(); } };
+}
+
+function renderPage(){
+  document.querySelectorAll('.navitem[data-nav]').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nav')===page); });
+  if(page==='dashboard') renderDashboard();
+  else if(page==='products') renderProducts();
+  else if(page==='studio') renderStudio();
+  else if(page==='videolog') renderVideoLog();
+  else if(page==='performance') renderPerformance();
+  else if(page==='analyst') renderAnalyst();
+  else if(page==='next') renderNext();
+  else if(page==='creative') renderCreative();
+  else if(page==='connect') renderConnect();
+  else if(page==='settings') renderSettings();
+}
+
+function wire(){
+  // app shell
+  document.querySelectorAll('[data-nav]').forEach(function(b){ b.onclick=function(){ page=b.getAttribute('data-nav'); sidebarOpen=false; render(); }; });
+  document.getElementById('signOutBtn').onclick=async function(){if(pendingSaves){toast('Wait for cloud saves before signing out.');return;}cloudReady=false;videos=[];reminders=[];products=[];notes=[];user=null;document.getElementById('app').replaceChildren();location.assign('/cdn-cgi/access/logout');};
+  var ham=document.getElementById('hamburger');
+  ham.onclick=function(){ sidebarOpen=!sidebarOpen; ham.setAttribute('aria-expanded', sidebarOpen?'true':'false'); document.getElementById('sidebar').classList.toggle('open',sidebarOpen); document.getElementById('scrim').classList.toggle('show',sidebarOpen); };
+  var scrim=document.getElementById('scrim'); if(scrim) scrim.onclick=function(){ sidebarOpen=false; render(); };
+  renderPage();
+  document.querySelectorAll('[data-log-reminder]').forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-log-reminder'); var r=reminders.find(function(x){return x.id===id;}); if(r){ prefillDraft={title:r.title}; reminders=reminders.filter(function(x){return x.id!==id;}); persist(REM_KEY,reminders); } page='studio'; render(); }; });
+  document.querySelectorAll('[data-dismiss-reminder]').forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-dismiss-reminder'); reminders=reminders.filter(function(x){return x.id!==id;}); persist(REM_KEY,reminders); render(); }; });
+}
+
+startCloud();
+})();
+</script>
+</body>
+</html>

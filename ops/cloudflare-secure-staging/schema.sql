@@ -4,3 +4,4 @@ CREATE TABLE IF NOT EXISTS workspaces (
   document TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
