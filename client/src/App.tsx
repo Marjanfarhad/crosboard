@@ -1,3 +1,6 @@
+import {useCloudWorkspace, videoTotals} from './lib/cloudWorkspace';
+import {CloudVideoStudio} from './components/CloudVideoStudio';
+const CLOUD = (import.meta as ImportMeta & {env:Record<string,string>}).env.VITE_COMMAND_CLOUD_SYNC === 'true';
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -203,7 +206,10 @@ function ToastStack({
 export default function App() {
   const [activeNav, setActiveNav] = useState("Command");
   const [range, setRange] = useState<Range>("7D");
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [demoProducts, setProducts] = useState<Product[]>(initialProducts);
+  const cloud=useCloudWorkspace(CLOUD);
+  const products:Product[]=CLOUD?(cloud.snapshot?.data.products??[]).map((p,index):Product=>({id:index+1,name:p.name,type:'Cloud product',revenue:'—',trend:'saved',color:'cream',note:'Saved in your workspace'})):demoProducts;
+  const totals=videoTotals(cloud.snapshot?.data.videos??[]);
   const [doneMoves, setDoneMoves] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -263,10 +269,16 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
 
-  const addProduct = () => {
+  const addProduct = async () => {
     const title = newProduct.trim();
     if (!title) {
       setProductError("Give the product a working title first.");
+      return;
+    }
+    if(CLOUD){
+      try{await cloud.save(doc=>({...doc,products:[...doc.products,{id:crypto.randomUUID(),name:title,price:0}]}));
+        setProductError('');setNewProduct('');setShowAdd(false);pushToast('Product saved to cloud.','success');
+      }catch(cause){setProductError(cause instanceof Error?cause.message:'Cloud save failed');}
       return;
     }
     setProducts(current => [
@@ -287,6 +299,7 @@ export default function App() {
     pushToast("Sample product added for this session.", "success");
   };
 
+  if(CLOUD&&!cloud.snapshot)return <main className="content-wrap"><h1>Command cloud workspace</h1><p role="status">{cloud.error||'Loading authenticated workspace…'}</p><button onClick={()=>location.reload()}>Reload</button><p>Your saved workspace has not been overwritten.</p></main>;
   return (
     <div className="app-shell">
       <a className="skip-link" href="#workspace-content">
@@ -315,8 +328,8 @@ export default function App() {
         >
           <div className="avatar">M</div>
           <div className="workspace-copy">
-            <strong>Sample workspace</strong>
-            <span>Session only · no cloud sync</span>
+            <strong>{CLOUD?"Cloud workspace":"Sample workspace"}</strong>
+            <span role="status">{CLOUD?(cloud.status==='saving'?'Saving to cloud…':'Cloud saved'):'Session only · no cloud sync'}</span>
           </div>
           <ChevronDown size={14} />
         </button>
@@ -364,14 +377,14 @@ export default function App() {
             <div className="signal-top">
               <span className="live-dot" /> Sample signal
             </div>
-            <p>Explore the workflow with fictional data.</p>
+            <p>{CLOUD?"Your authenticated workspace. Live AI is disabled.":"Explore the workflow with fictional data."}</p>
             <button onClick={() => setShowHelp(true)}>
               About this workspace <ArrowUpRight size={13} />
             </button>
           </div>
           <button className="profile-row" onClick={() => setShowHelp(true)}>
             <div className="avatar small">M</div>
-            <span>Demo visitor</span>
+            <span>{CLOUD?"Signed in with Access":"Demo visitor"}</span>
             <MoreHorizontal size={16} />
           </button>
         </div>
@@ -432,11 +445,11 @@ export default function App() {
         </header>
 
         <div className="content-wrap">
+          {CLOUD&&cloud.error&&<div role="alert">{cloud.error} Your form is retained. <button onClick={()=>location.reload()}>Reload cloud workspace</button></div>}
           <div className="demo-banner" role="note">
-            <strong>Demo workspace — sample data</strong>
+            <strong>{CLOUD?"Command · authenticated cloud workspace":"Demo workspace — sample data"}</strong>
             <span>
-              Products and checklist changes last until reload. No live revenue,
-              AI, analytics or publishing connection.
+              {CLOUD?"Products and video logs sync to your account. AI and publishing are disabled.":"Products and checklist changes last until reload. No live revenue, AI, analytics or publishing connection."}
             </span>
             <button className="text-button" onClick={() => setShowHelp(true)}>
               How it works
@@ -469,7 +482,7 @@ export default function App() {
                   <div className="hero-actions">
                     <button
                       className="primary-button"
-                      onClick={() => setShowAdd(true)}
+                      disabled={CLOUD&&cloud.status!=='ready'} onClick={() => setShowAdd(true)}
                     >
                       <Plus size={16} /> Add a product
                     </button>
@@ -513,22 +526,22 @@ export default function App() {
           {(isCommand || activeNav === "Performance") && (
             <section className="metrics-grid" aria-label="Key metrics">
               <Metric
-                label="Monthly revenue"
-                value={monthlyRevenue}
-                change="sample"
-                detail="Fictional month-to-date revenue"
+                label={CLOUD?"Logged commission":"Monthly revenue"}
+                value={CLOUD?formatMoney(totals.commission):monthlyRevenue}
+                change={CLOUD?"logged":"sample"}
+                detail={CLOUD?"All saved video records · USD":"Fictional month-to-date revenue"}
               />
               <Metric
-                label="Audience to offer"
-                value="6.8%"
-                change="sample"
-                detail="Illustrative conversion rate"
+                label={CLOUD?"Video views":"Audience to offer"}
+                value={CLOUD?totals.views.toLocaleString():"6.8%"}
+                change={CLOUD?"logged":"sample"}
+                detail={CLOUD?"Total logged views":"Illustrative conversion rate"}
               />
               <Metric
-                label="Capacity this week"
-                value="68%"
-                change="sample"
-                detail="Illustrative capacity, not a schedule"
+                label={CLOUD?"Commission RPM":"Capacity this week"}
+                value={CLOUD?`$${totals.rpm.toFixed(2)}`:"68%"}
+                change={CLOUD?"logged":"sample"}
+                detail={CLOUD?"Commission per 1,000 views":"Illustrative capacity, not a schedule"}
               />
             </section>
           )}
@@ -542,7 +555,7 @@ export default function App() {
                 </div>
                 <button
                   className="outline-button"
-                  onClick={() => setShowAdd(true)}
+                  disabled={CLOUD&&cloud.status!=='ready'} onClick={() => setShowAdd(true)}
                 >
                   New product <Plus size={15} />
                 </button>
@@ -560,7 +573,7 @@ export default function App() {
                     }
                   />
                 ))}
-                <button className="add-card" onClick={() => setShowAdd(true)}>
+                <button className="add-card" disabled={CLOUD&&cloud.status!=='ready'} onClick={() => setShowAdd(true)}>
                   <span>
                     <Plus size={20} />
                   </span>
@@ -578,7 +591,7 @@ export default function App() {
             </section>
           )}
 
-          {(isCommand || activeNav === "Performance") && (
+          {!CLOUD && (isCommand || activeNav === "Performance") && (
             <section className="insight-layout">
               <div className="chart-panel panel">
                 <div className="panel-heading">
@@ -667,7 +680,7 @@ export default function App() {
             </section>
           )}
 
-          {isCommand && (
+          {!CLOUD && isCommand && (
             <section
               className="lower-grid"
               id="next-moves"
@@ -754,7 +767,8 @@ export default function App() {
             </section>
           )}
 
-          {activeNav === "Studio" && (
+          {CLOUD && activeNav === "Studio" && cloud.snapshot && <CloudVideoStudio data={cloud.snapshot.data} saving={cloud.status!=='ready'} onSave={cloud.save}/> }
+          {!CLOUD && activeNav === "Studio" && (
             <section className="panel review-panel">
               <div className="section-kicker">Sample content queue</div>
               <h2>Review before publishing</h2>
@@ -786,13 +800,11 @@ export default function App() {
               <div className="section-kicker">Evidence status</div>
               <h2>No live analysis available</h2>
               <p>
-                This source version has no connected analytics property or live
-                AI analysis. Sample charts cannot support business
-                recommendations.
+                {CLOUD?"Live AI is disabled. Dashboard metrics are computed from your saved video logs.":"This source version has no connected analytics property or live AI analysis. Sample charts cannot support business recommendations."}
               </p>
               <dl>
                 <dt>Data source</dt>
-                <dd>Fictional fixtures</dd>
+                <dd>{CLOUD?"Account-scoped video logs":"Fictional fixtures"}</dd>
                 <dt>Live refresh</dt>
                 <dd>Unavailable</dd>
                 <dt>Recommendations</dt>
@@ -822,7 +834,7 @@ export default function App() {
           if (!open) setProductError("");
         }}
         title="Name the next thing."
-        description="Create a session-only sample product. Reloading clears your changes."
+        description={CLOUD?"Save a product to your authenticated cloud workspace.":"Create a session-only sample product. Reloading clears your changes."}
       >
         <form
           onSubmit={event => {
@@ -857,7 +869,7 @@ export default function App() {
             >
               Cancel
             </button>
-            <button type="submit" className="primary-button">
+            <button type="submit" className="primary-button" disabled={CLOUD&&cloud.status!=='ready'}>
               <Plus size={15} /> Add to stack
             </button>
           </div>
@@ -911,10 +923,9 @@ export default function App() {
       >
         <h3>Products and search</h3>
         <p>
-          Add sample products and find them by title. Products and checklist
-          changes are kept in memory until reload; they are not backed up or
-          synced.
+          {CLOUD?"Products and video logs load from your authenticated cloud workspace. Conflicts or failed saves stop editing until reload.":"Add sample products and find them by title. Products and checklist changes are kept in memory until reload; they are not backed up or synced."}
         </p>
+        {CLOUD&&<button className="outline-button" disabled={cloud.status==='saving'} onClick={()=>location.assign('/cdn-cgi/access/logout')}>Sign out</button>}
         <h3>Performance</h3>
         <p>
           7D covers seven dates, 30D covers thirty dates, and MTD starts on the
@@ -952,3 +963,4 @@ export default function App() {
     </div>
   );
 }
+
