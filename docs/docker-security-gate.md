@@ -28,6 +28,13 @@
 5. Update and regenerate lockfile for patched `fast-xml-parser`, `proxy-addr`, `axios`, `mysql2`, `nanoid`, tRPC/Drizzle and other compatible libraries. A temporary write-enabled lockfile update workflow was used and **deleted** afterwards.
 6. Add CI comparison against the main baseline, runtime non-root and HTTP checks, and explicit exclusion checks for `CVE-2026-25896` and `CVE-2026-90711`.
 
+## Additional verification — OAuth boundaries and isolated DB CRUD
+- New `server/oauth.callback.test.ts` exercises six **synthetic/mock** OAuth callback scenarios: missing parameters, mismatched nonce, absent nonce cookie, successful mock exchange and secure session cookie, missing upstream user ID, and failed persistence. These tests do not contact the Manus provider.
+- Draft commit `d027497cc6bcc86d498164d4bc4eb534a12dc7a1` passed full GitHub CI run `41551395267` (TypeScript/unit, browser Playwright, Pages/Lighthouse).
+- Docker security run `41551395374` passed; it exercised temporary MySQL 8.4/Drizzle **insert, upsert, query and delete** in a disposable database, in addition to the existing container and CVE checks. No production DB or real user records were touched.
+- Latest Trivy artifact `13193540343` confirms `729 → 237` findings (CRITICAL `13 → 1`; HIGH `226 → 32`; MEDIUM `372 → 115`; LOW `113 → 87`; UNKNOWN `5 → 2`). All remaining Critical/High records are reported under Debian system packages.
+- This is evidence of the candidate runtime and synthetic security boundary behavior, **not** evidence of successful live user login, production migrations or working real-world data persistence.
+
 ## Outstanding vulnerabilities
 - **One CRITICAL** finding: `CVE-2023-45853`, Debian `zlib1g` (`1:1.2.13.dfsg-1`), reported `will_not_fix` by Trivy. The advisory relates to a MiniZip code path. Whether the application can reach that path is **not established**; avoid claiming either exploitability or safety without runtime provenance review.
 - **32 HIGH** findings are associated with system libraries/packages in the Debian base image. These are not the same as the previously fixed application-level Node.js dependency findings.
@@ -35,7 +42,7 @@
 
 ## Deployment / release blockers (not yet verified)
 1. End-to-end authenticated user login and OAuth callback against the **actual** provider, including session expiry/revocation and protected API access. Existing smoke test only checks missing callback parameters return 400.
-2. End-to-end application-level MySQL/Drizzle user-table CRUD, schema migrations and persistence checks with isolated test credentials. Basic MySQL/Drizzle driver connectivity **has passed** in GitHub CI, but not migrations or app data operations; no live database was accessed.
+2. Application's real user-schema migrations and real authenticated app-level persistence require a separate staging integration test. Disposable MySQL/Drizzle insert-upsert-query-delete has passed, but does not confirm actual production schema or user data.
 3. Source reconciliation with the previously deployed Manus instance, plus DNS/hosting origin/route review. GitHub Pages serves static assets, not the Node API or MySQL.
 4. Production configuration and secrets isolation, container image provenance and pinning by digest, recovery and rollback, and verified backups.
 5. Review or document acceptance/mitigations for the remaining 1 CRITICAL and 32 HIGH findings before release.
