@@ -1,0 +1,47 @@
+name: Cloudflare domain inventory
+on:
+  push:
+    branches: [fix/cloudflare-worker-recovery-20261103]
+    paths: [.github/workflows/cloudflare-domain-inventory.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read domain inventory without changing resources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error, urllib.parse
+          token = os.environ['CLOUDFLARE_API_TOKEN']
+          account = os.environ['CLOUDFLARE_ACCOUNT_ID']
+          endpoints = [
+              ('DNS zones', '/zones?' + urllib.parse.urlencode({'account.id': account, 'per_page': 50})),
+              ('Registrar domains', '/accounts/' + account + '/registrar/domains?per_page=50')
+          ]
+          for label, path in endpoints:
+              request = urllib.request.Request('https://api.cloudflare.com/client/v4' + path, headers={'Authorization': 'Bearer ' + token})
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      body = json.load(response)
+                  if not body.get('success'):
+                      print(label + ': unavailable; API rejected inventory request')
+                      continue
+                  result = body.get('result', [])
+                  if isinstance(result, dict):
+                      result = result.get('domains', [])
+                  print(label + ': ' + str(len(result)) + ' visible entries')
+                  for item in result:
+                      print(json.dumps({'domain': item.get('name') or item.get('domain_name'), 'status': item.get('status')}, ensure_ascii=True))
+                  print('Pagination: ' + json.dumps(body.get('result_info', {})))
+                  if not result:
+                      print('Empty results do not prove no registered domains: token visibility may be limited.')
+              except urllib.error.HTTPError as error:
+                  print(label + ': HTTP ' + str(error.code) + '; inventory permission unavailable')
+          print('Read-only inventory complete. No DNS, domain or Worker changes made.')
+          PY
