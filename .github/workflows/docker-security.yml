@@ -82,6 +82,8 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
+          # Apply only to the disposable CI database; never connect to production.
+          docker exec -i crosboard-ci-mysql mysql -uroot -pisolated-ci-only crosboard_ci < docs/sql/auth-sessions-staging.sql
           docker run --rm --network crosboard-ci-db --entrypoint node crosboard:candidate --input-type=module -e "
             import mysql from 'mysql2/promise';
             import { drizzle } from 'drizzle-orm/mysql2';
@@ -108,8 +110,24 @@ jobs:
             await db.delete(users).where(eq(users.openId,'synthetic-oauth-user'));
             const afterDelete = await db.select().from(users).where(eq(users.openId,'synthetic-oauth-user'));
             if (afterDelete.length) throw new Error('Isolated deletion failed');
+            const sessionHash = 'a'.repeat(64);
+            await client.execute(
+              'INSERT INTO auth_sessions (idHash, openId, expiresAt) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 DAY))',
+              [sessionHash, 'synthetic-oauth-user']
+            );
+            const [activeBefore] = await client.execute(
+              'SELECT idHash FROM auth_sessions WHERE idHash=? AND openId=? AND revokedAt IS NULL AND expiresAt > NOW()',
+              [sessionHash, 'synthetic-oauth-user']
+            );
+            if (activeBefore.length !== 1) throw new Error('Session registry lookup failed');
+            await client.execute('UPDATE auth_sessions SET revokedAt=NOW() WHERE idHash=?', [sessionHash]);
+            const [activeAfter] = await client.execute(
+              'SELECT idHash FROM auth_sessions WHERE idHash=? AND openId=? AND revokedAt IS NULL AND expiresAt > NOW()',
+              [sessionHash, 'synthetic-oauth-user']
+            );
+            if (activeAfter.length !== 0) throw new Error('Revoked session remained active');
             await client.end();
-            console.log('Isolated MySQL/Drizzle insert-update-read-delete passed');
+            console.log('Isolated user CRUD and session revocation table checks passed');
           "
 
       - name: Checkout baseline Dockerfile from main
