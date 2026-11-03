@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {createApi} from './api.mjs';
+import {createApi,verifyIdentity} from './api.mjs';
 const pair=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
 const jwk={...await crypto.subtle.exportKey('jwk',pair.publicKey),kid:'test'};
 const encode=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
@@ -19,6 +19,18 @@ function fixture(){
  }
  return {call,env,sql,api};
 }
+test('Access session cookies require the same signature, issuer and audience verification',async()=>{
+ const f=fixture();
+ const keys=async()=>Response.json({keys:[jwk]});
+ const cookieRequest=value=>new Request('https://app.test/',{headers:{cookie:'CF_Authorization='+value}});
+ assert.equal(await verifyIdentity(cookieRequest(await token('a')),f.env,keys),'a');
+ for(const value of ['forged',await token('a',{aud:['wrong']}),await token('a',{exp:1})]){
+  await assert.rejects(verifyIdentity(cookieRequest(value),f.env,keys));
+ }
+ const valid=await token('a');
+ await assert.rejects(verifyIdentity(cookieRequest(valid.slice(0,-10)+'AAAAAAAAAA'),f.env,keys));
+ f.sql.close();
+});
 test('real signed tokens scope storage and preserve independent accounts',async()=>{
  const f=fixture(),a=await token('a'),b=await token('b');
  assert.equal((await f.call(a,'PUT',{revision:0,data:{owner_id:'b',videos:[1]}})).status,200);

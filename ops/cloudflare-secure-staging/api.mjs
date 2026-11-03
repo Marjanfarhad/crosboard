@@ -4,7 +4,10 @@ const decode = value => Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/
 const parse = value => JSON.parse(new TextDecoder().decode(decode(value)));
 export async function verifyIdentity(request,env,fetchKeys=fetch) {
   if(!/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_ISSUER??'') || !env.ACCESS_AUD) throw new Error('configuration');
-  const token=request.headers.get('Cf-Access-Jwt-Assertion');
+  // Static-asset routing may omit the assertion header. The Access session
+  // cookie carries the same signed application JWT; validate it identically.
+  const cookies=(request.headers.get('cookie')??'').split(';').map(value=>value.trim()).filter(value=>value.startsWith('CF_Authorization='));
+  const token=request.headers.get('Cf-Access-Jwt-Assertion') || (cookies.length===1?cookies[0].slice('CF_Authorization='.length):null);
   if(!token || token.length>16384) throw new Error('identity');
   const parts=token.split('.'); if(parts.length!==3) throw new Error('identity');
   const header=parse(parts[0]), claims=parse(parts[1]);
