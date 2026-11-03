@@ -7,6 +7,8 @@
 - Candidate container test commit: `11b0ff7d1df9c72ef9aabcf5f049abf10818cbe3`.
 - GitHub Docker scan: run `41549518408`; Trivy report artifact `13190915755`. Both baseline and candidate image builds, non-root UID, health/static/OAuth-input smoke tests, production npm tooling exclusion, and scans passed.
 - Full GitHub CI: run `41549518411`; TypeScript/unit tests, Playwright end-to-end tests, Pages build and Lighthouse all passed.
+- Latest isolated database CI: Docker run `41550042077` completed successfully. An ephemeral MySQL 8.4 container with disposable credentials accepted a `SELECT 1` query issued through the candidate image's `mysql2/promise` and `drizzle-orm/mysql2` runtime libraries; this does **not** validate production data, migrations, or authenticated CRUD.
+- Latest full CI on the same application code: run `41550041985`; all three jobs (TypeScript/unit, Pages build/Lighthouse, Playwright) completed successfully.
 - Scanner counts below are vulnerability **findings**, not unique CVE IDs; both images were scanned in the same workflow.
 
 | Severity | Baseline | Candidate | Difference |
@@ -33,7 +35,7 @@
 
 ## Deployment / release blockers (not yet verified)
 1. End-to-end authenticated user login and OAuth callback against the **actual** provider, including session expiry/revocation and protected API access. Existing smoke test only checks missing callback parameters return 400.
-2. End-to-end MySQL/Drizzle operations with non-production test credentials and migrations; no live database was connected during these scans.
+2. End-to-end application-level MySQL/Drizzle user-table CRUD, schema migrations and persistence checks with isolated test credentials. Basic MySQL/Drizzle driver connectivity **has passed** in GitHub CI, but not migrations or app data operations; no live database was accessed.
 3. Source reconciliation with the previously deployed Manus instance, plus DNS/hosting origin/route review. GitHub Pages serves static assets, not the Node API or MySQL.
 4. Production configuration and secrets isolation, container image provenance and pinning by digest, recovery and rollback, and verified backups.
 5. Review or document acceptance/mitigations for the remaining 1 CRITICAL and 32 HIGH findings before release.
