@@ -50,3 +50,24 @@ jobs:
         run: |
           npx --yes wrangler@4 deploy --dry-run --config wrangler.json
           npx --yes wrangler@4 deploy --config wrangler.json
+      - name: Verify anonymous requests reach Access login
+        run: |
+          python3 - <<'PY'
+          import time, urllib.request, urllib.error
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect)
+          for attempt in range(12):
+              try:
+                  response = opener.open('https://command-app-secure-staging.caring-philodendron.workers.dev/', timeout=15)
+                  code, location = response.status, response.headers.get('Location', '')
+              except urllib.error.HTTPError as error:
+                  code, location = error.code, error.headers.get('Location', '')
+              if code in (301,302,303,307,308) and '.cloudflareaccess.com/' in location:
+                  print('Anonymous request redirects to Cloudflare Access login.')
+                  break
+              if attempt == 11:
+                  raise SystemExit(f'Access login redirect not verified: HTTP {code}')
+              time.sleep(5)
+          PY
