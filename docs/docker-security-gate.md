@@ -47,6 +47,19 @@
 4. Production configuration and secrets isolation, container image provenance and pinning by digest, recovery and rollback, and verified backups.
 5. Review or document acceptance/mitigations for the remaining 1 CRITICAL and 32 HIGH findings before release.
 
+
+## Draft session revocation implementation (NOT deployed)
+- `drizzle/schema.ts` defines `auth_sessions` with SHA-256 hashed `jti` primary key, user identity, expiry and revocation timestamp.
+- `server/db.ts` persists sessions, performs active/unrevoked checks, and marks sessions revoked.
+- Interactive OAuth login persists its new session **before** returning a cookie; JWTs carry random `jti` values and retain seven-day expiry.
+- `sdk.verifySession` rejects unsigned, expired, legacy/no-`jti`, unknown or revoked interactive tokens, and **fails closed** when the session database is unavailable.
+- Logout attempts server-side revocation before reporting success, and clears the browser cookie even if revocation fails; therefore a stolen cookie cannot be considered invalidated if DB writes fail.
+- The scheduled-job `cron_` token path is preserved with Manus upstream identity validation; it is not an interactive session registry entry.
+- `server/auth.session.test.ts`, `server/auth.logout.test.ts`, and `server/platform.test.ts` have new/revised regression cases.
+- `docs/sql/auth-sessions-staging.sql` contains **review-only SQL** for an isolated database; no production migration has run.
+- **Deployment-breaking compatibility**: currently issued interactive JWTs have no `jti` and will be rejected (forcing users to log in again) after this change. Do not release before migrating the table, validating the deployed provider, confirming user impact/rollout, and obtaining owner approval.
+- Revocation evidence is a draft-code and mocked/staging test result only; it does not demonstrate production enforcement.
+
 ## Guardrails
 - No `main` merge, production deployment, billing change, DNS edit, external publication, or production DB migration was performed.
 - Preserve Draft PR #9 for owner review. Require explicit approval before any production changes.
