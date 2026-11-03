@@ -11,7 +11,16 @@ export function createWorker(fetchKeys = fetch) {
     }
     // Authenticate assets too, including direct workers.dev and preview requests.
     try { await verifyIdentity(request, env, fetchKeys); }
-    catch { return json({error: 'Authentication required'}, 401); }
+    catch {
+      if (!path.startsWith('/api/') && path !== '/api' && ['GET', 'HEAD'].includes(request.method) &&
+          /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_ISSUER)) {
+        const login = new URL('/cdn-cgi/access/login/command-app-secure-staging.caring-philodendron.workers.dev', env.ACCESS_ISSUER);
+        login.searchParams.set('kid', env.ACCESS_AUD);
+        login.searchParams.set('redirect_url', '/');
+        return new Response(null, {status: 302, headers: {location: login.href, 'cache-control': 'no-store'}});
+      }
+      return json({error: 'Authentication required'}, 401);
+    }
     if (path === '/api/health') return json({ok: true, aiConfigured: false, storageVerified: false}, 200);
     if (path === '/api/creative' || path === '/api/next-recommendation') {
       return json({error: 'AI is disabled pending authentication and storage verification'}, 503);

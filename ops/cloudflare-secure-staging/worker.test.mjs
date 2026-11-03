@@ -21,7 +21,14 @@ function fixture() {
 test('anonymous root, nested assets and APIs fail closed without fetching assets',async()=>{
   const f=fixture();
   for(const path of ['/', '/assets/app.js','/dashboard','/api/account','/api/workspace']) {
-    assert.equal((await worker.fetch(await request(path),f.env)).status,401);
+    const response=await worker.fetch(await request(path),f.env);
+    assert.equal(response.status,path.startsWith('/api/')?401:302);
+    if(response.status===302){
+      const login=new URL(response.headers.get('location'));
+      assert.equal(login.origin,f.env.ACCESS_ISSUER);
+      assert.equal(login.searchParams.get('kid'),f.env.ACCESS_AUD);
+      assert.equal(login.searchParams.get('redirect_url'),'/');
+    }
   }
   assert.equal(f.assetCalls,0);
 });
