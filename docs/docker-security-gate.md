@@ -51,3 +51,10 @@
 - No `main` merge, production deployment, billing change, DNS edit, external publication, or production DB migration was performed.
 - Preserve Draft PR #9 for owner review. Require explicit approval before any production changes.
 - Future test runs should use synthetic or non-production credentials only; do not expose real secrets in Actions artifacts.
+
+## New interactive session policy — draft branch only
+- The OAuth callback now issues seven-day sessions using `ONE_WEEK_MS`; the matching cookie Max-Age and JWT expiry are derived from the same duration.
+- A regression test asserts the shorter token and cookie lifetime with mocked provider and user persistence.
+- Already-issued one-year sessions remain valid until their signed `exp` after deployment unless an explicit revocation plan is implemented.
+- No server-side session revocation is implemented. This remains a release gate for elevated-risk deployments; never claim cookie clearing revokes an already stolen token.
+- Live Manus OAuth callback and user database schema/migrations remain unverified against the actual production environment.
