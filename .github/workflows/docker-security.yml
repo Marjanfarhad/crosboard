@@ -85,7 +85,8 @@ jobs:
           docker run --rm --network crosboard-ci-db --entrypoint node crosboard:candidate --input-type=module -e "
             import mysql from 'mysql2/promise';
             import { drizzle } from 'drizzle-orm/mysql2';
-            import { sql } from 'drizzle-orm';
+            import { sql, eq } from 'drizzle-orm';
+            import { mysqlTable, int, varchar } from 'drizzle-orm/mysql-core';
             const client = await mysql.createConnection({
               host: 'crosboard-ci-mysql',
               user: 'root',
@@ -94,8 +95,21 @@ jobs:
             });
             const db = drizzle(client);
             await db.execute(sql\`SELECT 1 AS healthcheck\`);
+            await client.execute('CREATE TABLE users (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, openId VARCHAR(64) NOT NULL UNIQUE, name VARCHAR(255) NULL)');
+            const users = mysqlTable('users', {
+              id: int('id').autoincrement().primaryKey(),
+              openId: varchar('openId',{length:64}).notNull().unique(),
+              name: varchar('name',{length:255})
+            });
+            await db.insert(users).values({openId:'synthetic-oauth-user',name:'Initial'}).onDuplicateKeyUpdate({set:{name:'Initial'}});
+            await db.insert(users).values({openId:'synthetic-oauth-user',name:'Updated'}).onDuplicateKeyUpdate({set:{name:'Updated'}});
+            const rows = await db.select().from(users).where(eq(users.openId,'synthetic-oauth-user'));
+            if (rows.length !== 1 || rows[0].name !== 'Updated') throw new Error('Isolated insert/upsert/read roundtrip failed');
+            await db.delete(users).where(eq(users.openId,'synthetic-oauth-user'));
+            const afterDelete = await db.select().from(users).where(eq(users.openId,'synthetic-oauth-user'));
+            if (afterDelete.length) throw new Error('Isolated deletion failed');
             await client.end();
-            console.log('Isolated MySQL / Drizzle query passed');
+            console.log('Isolated MySQL/Drizzle insert-update-read-delete passed');
           "
 
       - name: Checkout baseline Dockerfile from main
