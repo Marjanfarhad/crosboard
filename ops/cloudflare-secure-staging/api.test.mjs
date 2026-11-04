@@ -65,3 +65,13 @@ test('an account switch cannot save a previous account document',async()=>{
  f.sql.close();
 });
 
+
+
+test('overlapping Access cookies select only a valid application identity',async()=>{
+ const f=fixture(),keys=async()=>Response.json({keys:[jwk]}),a=await token('a'),other=await token('a',{aud:['other-app']});
+ const request=cookie=>new Request('https://app.test/',{headers:{cookie}});
+ assert.equal(await verifyIdentity(request('CF_Authorization='+other+'; CF_Authorization='+a),f.env,keys),'a');
+ assert.equal(await verifyIdentity(request('CF_Authorization="'+a+'"'),f.env,keys),'a');
+ await assert.rejects(verifyIdentity(request('CF_Authorization='+a+'; CF_Authorization='+await token('b')),f.env,keys),{code:'AUTH_AMBIGUOUS'});
+ f.sql.close();
+});
