@@ -16,7 +16,7 @@ export function CloudWorkspaceTools({page,data,disabled,onSave}:{page:string;dat
   }else if(await save(doc=>({...doc,reminders:[...(doc.reminders??[]),{id:crypto.randomUUID(),title,postedAt:Date.now()}]})))form.reset();
  }
  return <section className="panel review-panel"><h2>{page}</h2>{error&&<p role="alert">{error}</p>}<p role="status">{message}</p>
-  {page==='Connect'?<p>TikTok OAuth is not configured. Use Studio or CSV to log verified metrics.</p>:page==='Data'?<>
+  {page==='Connect'?<><p>Test TikTok authorization in staging. Use Studio or CSV to log verified metrics.</p><a className="outline-button" href="/api/tiktok/connect">Test TikTok connection</a></>:page==='Data'?<>
    <p>Exports contain your account data. CSV import appends new videos; existing records are retained.</p>
    <button className="outline-button" onClick={()=>download('command-videos.csv',exportVideos(data.videos),'text/csv')}>Export video CSV</button>
    <button className="outline-button" onClick={()=>download('command-workspace.json',JSON.stringify(data,null,2),'application/json')}>Download workspace backup</button>
