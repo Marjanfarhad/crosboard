@@ -32,6 +32,7 @@ jobs:
           node ops/cloudflare-secure-staging/api.test.mjs
           node ops/cloudflare-secure-staging/worker.test.mjs
           node ops/cloudflare-secure-staging/ai.test.mjs
+          node ops/cloudflare-secure-staging/tiktok.test.mjs
       - name: Build the original React app with cloud sync
         env:
           VITE_COMMAND_CLOUD_SYNC: 'true'
