@@ -22,10 +22,12 @@ jobs:
       - name: Check real official URL and Access login in desktop/mobile browsers
         run: pnpm exec playwright test --config playwright.live.config.ts
       - name: Check product/video saves, reload, notes, reminders and conflicts with mock API
+        if: ${{ !cancelled() }}
         env:
           VITE_COMMAND_CLOUD_SYNC: 'true'
         run: pnpm exec playwright test --config playwright.cloud.config.ts
       - name: Resolve and verify existing live D1 binding without provisioning
+        if: ${{ !cancelled() }}
         working-directory: ops/cloudflare-secure-staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -56,6 +58,7 @@ jobs:
           print('Confirmed: tests target the database bound to the deployed secure Worker. No configuration changed.')
           PY
       - name: Exercise live D1 persistence and synthetic account isolation, then clean up
+        if: ${{ !cancelled() }}
         working-directory: ops/cloudflare-secure-staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

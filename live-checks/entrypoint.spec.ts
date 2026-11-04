@@ -2,6 +2,9 @@ import {test,expect} from '@playwright/test';
 test('official URL reaches real Access login and protects account data',async({page,context})=>{
  await page.goto('https://marjanfarhad.github.io/crosboard/',{waitUntil:'domcontentloaded'});
  await page.waitForURL(url=>url.hostname.endsWith('.cloudflareaccess.com'),{timeout:45000});
+ await page.waitForLoadState('domcontentloaded');
+ console.log('Public login title:',await page.title());
+ console.log('Public login text:',(await page.locator('body').innerText()).slice(0,1800));
  await expect(page.locator('input[type="email"]')).toBeVisible({timeout:15000});
  await expect(page.locator('body')).not.toContainText('{"error":"Authentication required"}');
  await page.screenshot({path:'live-check-results/access-login-'+test.info().project.name+'.png',fullPage:true});
