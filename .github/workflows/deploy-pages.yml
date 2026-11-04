@@ -58,6 +58,7 @@ jobs:
           python3 provision.py
           node live-storage.test.mjs
       - name: Verify the initial real OpenAI response before enabling live AI
+        if: vars.COMMAND_ENABLE_LIVE_AI == 'true'
         working-directory: ops/cloudflare-secure-staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -70,15 +71,19 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          COMMAND_ENABLE_LIVE_AI: ${{ vars.COMMAND_ENABLE_LIVE_AI }}
         run: |
           node --input-type=module - <<'JS'
           import {readFileSync,writeFileSync} from 'node:fs';
-          if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY secret is missing');
+          const enableAi=process.env.COMMAND_ENABLE_LIVE_AI==='true';
+          if (enableAi&&!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY secret is missing');
           const config=JSON.parse(readFileSync('wrangler.json','utf8'));
-          config.vars.AI_ENABLED='true';
+          config.vars.AI_ENABLED=enableAi?'true':'false';
           writeFileSync('wrangler.json',JSON.stringify(config));
           JS
-          printf '%s' "$OPENAI_API_KEY" | npx --yes wrangler@4 secret put OPENAI_API_KEY --config wrangler.json
+          if [ "$COMMAND_ENABLE_LIVE_AI" = "true" ]; then
+            printf '%s' "$OPENAI_API_KEY" | npx --yes wrangler@4 secret put OPENAI_API_KEY --config wrangler.json
+          fi
           cp -a ../../dist/public/. public/
           npx --yes wrangler@4 deployments list --config wrangler.json
           npx --yes wrangler@4 deploy --dry-run --config wrangler.json
@@ -183,4 +188,5 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
 

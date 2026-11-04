@@ -1,0 +1,52 @@
+name: Command Access diagnostics
+on:
+  push:
+    branches: [fix/command-access-redirect-loop]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compare active Worker and Access settings without changing either
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error
+          base='https://api.cloudflare.com/client/v4/accounts/'+os.environ['CLOUDFLARE_ACCOUNT_ID']
+          def read(path):
+              req=urllib.request.Request(base+path,headers={'Authorization':'Bearer '+os.environ['CLOUDFLARE_API_TOKEN']})
+              with urllib.request.urlopen(req,timeout=30) as response: value=json.load(response)
+              if not value.get('success'): raise SystemExit('Cloudflare read failed')
+              return value['result']
+          hostname='command-app-secure-staging.caring-philodendron.workers.dev'
+          settings=read('/workers/scripts/command-app-secure-staging/settings')
+          bindings={b['name']:b.get('text') for b in settings.get('bindings',[]) if b.get('type')=='plain_text'}
+          apps=[app for app in read('/access/apps?per_page=1000') if app.get('domain')==hostname]
+          print('Matching Access applications:',len(apps))
+          for app in apps:
+              print('Runtime audience matches Access application:',bindings.get('ACCESS_AUD')==app.get('aud'))
+              print('Destination types:',','.join(d.get('type','unknown') for d in app.get('destinations',[])))
+              print('Application allowed identity providers:',len(app.get('allowed_idps',[])))
+          issuer=bindings.get('ACCESS_ISSUER','')
+          print('Configured issuer host:',issuer)
+          for label,headers in [('default API client',{}),('explicit JSON client',{'Accept':'application/json','User-Agent':'Mozilla/5.0'})]:
+              try:
+                  req=urllib.request.Request(issuer+'/cdn-cgi/access/certs',headers=headers)
+                  with urllib.request.urlopen(req,timeout=15) as response:
+                      keys=json.load(response).get('keys',[])
+                  print(label+' public signing keys:',len(keys))
+              except urllib.error.HTTPError as error:
+                  print(label+' signing-key HTTP status:',error.code)
+          try:
+              org=read('/access/organizations')
+              domain=org.get('auth_domain','')
+              print('Organization issuer matches runtime:',issuer=='https://'+domain if domain else 'not returned')
+              print('Organization auth domain:',domain)
+          except urllib.error.HTTPError as error:
+              print('Organization metadata permission:',error.code)
+          print('No tokens, cookies, private signing keys or user identities logged. No changes made.')
+          PY

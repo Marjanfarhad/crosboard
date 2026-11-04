@@ -2,35 +2,62 @@
 const json = (data,status=200) => new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json','cache-control':'no-store'}});
 const decode = value => Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 const parse = value => JSON.parse(new TextDecoder().decode(decode(value)));
+export class AccessIdentityError extends Error {
+  constructor(code,status=401){super(code);this.code=code;this.status=status;}
+}
+export function hasAccessCredential(request){
+  return !!request.headers.get('Cf-Access-Jwt-Assertion') || /(?:^|;)\s*CF_Authorization=/.test(request.headers.get('cookie')??'');
+}
+function credentials(request){
+  const assertion=request.headers.get('Cf-Access-Jwt-Assertion');
+  if(assertion)return [assertion];
+  return (request.headers.get('cookie')??'').split(';').map(value=>value.trim()).filter(value=>value.startsWith('CF_Authorization=')).slice(0,5).map(value=>{
+    let token=value.slice('CF_Authorization='.length);
+    if(token.startsWith('"')&&token.endsWith('"'))token=token.slice(1,-1);
+    try{return decodeURIComponent(token);}catch{return '';}
+  });
+}
 export async function verifyIdentity(request,env,fetchKeys=fetch) {
-  if(!/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_ISSUER??'') || !env.ACCESS_AUD) throw new Error('configuration');
-  // Static-asset routing may omit the assertion header. The Access session
-  // cookie carries the same signed application JWT; validate it identically.
-  const cookies=(request.headers.get('cookie')??'').split(';').map(value=>value.trim()).filter(value=>value.startsWith('CF_Authorization='));
-  const token=request.headers.get('Cf-Access-Jwt-Assertion') || (cookies.length===1?cookies[0].slice('CF_Authorization='.length):null);
-  if(!token || token.length>16384) throw new Error('identity');
-  const parts=token.split('.'); if(parts.length!==3) throw new Error('identity');
-  const header=parse(parts[0]), claims=parse(parts[1]);
-  const now=Math.floor(Date.now()/1000);
-  if(header.alg!=='RS256' || typeof header.kid!=='string' || header.crit!==undefined || claims.iss!==env.ACCESS_ISSUER ||
-     !(Array.isArray(claims.aud)?claims.aud:[claims.aud]).includes(env.ACCESS_AUD) ||
-     typeof claims.exp!=='number' || claims.exp<=now ||
-     (claims.nbf!==undefined && (typeof claims.nbf!=='number'||claims.nbf>now)) ||
-     typeof claims.sub!=='string'||!claims.sub||claims.sub.length>256) throw new Error('identity');
-  const response=await fetchKeys(env.ACCESS_ISSUER+'/cdn-cgi/access/certs',{redirect:'error',signal:AbortSignal.timeout(5000)});
-  if(!response.ok) throw new Error('identity');
-  const keys=(await response.json()).keys;
-  const jwk=Array.isArray(keys)?keys.find(k=>k.kid===header.kid&&k.kty==='RSA'):undefined;
-  if(!jwk) throw new Error('identity');
-  const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
-  if(!await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,decode(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]))) throw new Error('identity');
-  return claims.sub;
+  if(!/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_ISSUER??'') || !env.ACCESS_AUD)throw new AccessIdentityError('AUTH_CONFIG',503);
+  const tokens=credentials(request);if(!tokens.length)throw new AccessIdentityError('AUTH_MISSING');
+  const verified=new Set();let failure=new AccessIdentityError('AUTH_INVALID');
+  let signingKeys;
+  for(const token of tokens){try{
+    if(!token||token.length>16384)throw new AccessIdentityError('AUTH_INVALID');
+    const parts=token.split('.');if(parts.length!==3)throw new AccessIdentityError('AUTH_INVALID');
+    let header,claims;try{header=parse(parts[0]);claims=parse(parts[1]);}catch{throw new AccessIdentityError('AUTH_INVALID');}
+    if(!header||!claims||header.alg!=='RS256'||typeof header.kid!=='string'||header.crit!==undefined)throw new AccessIdentityError('AUTH_INVALID');
+    if(claims.iss!==env.ACCESS_ISSUER)throw new AccessIdentityError('AUTH_ISSUER');
+    if(!(Array.isArray(claims.aud)?claims.aud:[claims.aud]).includes(env.ACCESS_AUD))throw new AccessIdentityError('AUTH_AUDIENCE');
+    const now=Math.floor(Date.now()/1000);
+    if(typeof claims.exp!=='number'||claims.exp<=now)throw new AccessIdentityError('AUTH_EXPIRED');
+    if(claims.nbf!==undefined&&(typeof claims.nbf!=='number'||claims.nbf>now))throw new AccessIdentityError('AUTH_NOT_YET_VALID');
+    if(typeof claims.sub!=='string'||!claims.sub||claims.sub.length>256)throw new AccessIdentityError('AUTH_INVALID');
+    if(!signingKeys){
+      try{
+        const response=await fetchKeys(env.ACCESS_ISSUER+'/cdn-cgi/access/certs',{redirect:'error',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+        if(!response.ok)throw new Error('keys');
+        signingKeys=(await response.json()).keys;
+        if(!Array.isArray(signingKeys))throw new Error('keys');
+      }catch{throw new AccessIdentityError('AUTH_KEYS_UNAVAILABLE',503);}
+    }
+    const jwk=signingKeys.find(key=>key.kid===header.kid&&key.kty==='RSA');
+    if(!jwk)throw new AccessIdentityError('AUTH_SIGNING_KEY');
+    try{
+      const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
+      if(!await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,decode(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1])))throw new Error('signature');
+    }catch{throw new AccessIdentityError('AUTH_SIGNATURE');}
+    verified.add(claims.sub);
+  }catch(error){failure=error instanceof AccessIdentityError?error:new AccessIdentityError('AUTH_INVALID');}}
+  if(verified.size>1)throw new AccessIdentityError('AUTH_AMBIGUOUS');
+  if(verified.size===1)return [...verified][0];
+  throw failure;
 }
 export function createApi(fetchKeys=fetch) {
  return async (request,env) => {
   if(!env.DB || !env.ACCESS_ISSUER || !env.ACCESS_AUD) return json({error:'Service not configured'},503);
   let owner;
-  try{owner=await verifyIdentity(request,env,fetchKeys);}catch{return json({error:'Authentication required'},401);}
+  try{owner=await verifyIdentity(request,env,fetchKeys);}catch(error){return json({error:error.status===503?'Sign-in verification is temporarily unavailable':'Authentication required',code:error.code??'AUTH_INVALID'},error.status??401);}
   const path=new URL(request.url).pathname;
   if(path==='/api/account'&&request.method==='GET')return json({userId:owner});
   if(path!=='/api/workspace')return json({error:'Not found'},404);
@@ -59,4 +86,5 @@ export function createApi(fetchKeys=fetch) {
  };
 }
 export default {fetch:createApi()};
+
 

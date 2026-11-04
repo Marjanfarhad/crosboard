@@ -27,7 +27,7 @@ test('anonymous root, nested assets and APIs fail closed without fetching assets
       const login=new URL(response.headers.get('location'));
       assert.equal(login.origin,f.env.ACCESS_ISSUER);
       assert.equal(login.searchParams.get('kid'),f.env.ACCESS_AUD);
-      assert.equal(login.searchParams.get('redirect_url'),'/');
+      assert.equal(login.searchParams.get('redirect_url'),'/?command_login=1');
     }
   }
   assert.equal(f.assetCalls,0);
@@ -48,4 +48,22 @@ test('AI stays disabled for authenticated users and health does not claim storag
 test('missing asset binding blocks access instead of exposing a partial app',async()=>{
   const f=fixture();delete f.env.ASSETS;
   assert.equal((await worker.fetch(await request('/',true),f.env)).status,503);
+});
+
+
+test('a rejected session never redirects back into the login loop',async()=>{
+ const f=fixture();
+ const rejected=new Request('https://staging.test/',{headers:{cookie:'CF_Authorization=invalid-session'}});
+ const response=await worker.fetch(rejected,f.env);
+ assert.equal(response.status,401);assert.equal(response.headers.get('location'),null);
+ const html=await response.text();assert.match(html,/AUTH_INVALID/);assert.doesNotMatch(html,/invalid-session|http-equiv=.refresh/);
+});
+test('returning from Access without a credential stops after one automatic attempt',async()=>{
+ const f=fixture();const response=await worker.fetch(await request('/?command_login=1'),f.env);
+ assert.equal(response.status,401);assert.equal(response.headers.get('location'),null);assert.match(await response.text(),/AUTH_MISSING/);
+});
+test('signing-key failures return a service error without a login redirect',async()=>{
+ const f=fixture();const unavailable=createWorker(async()=>new Response('',{status:503}));
+ const response=await unavailable.fetch(await request('/',true),f.env);
+ assert.equal(response.status,503);assert.equal(response.headers.get('location'),null);assert.match(await response.text(),/AUTH_KEYS_UNAVAILABLE/);
 });
