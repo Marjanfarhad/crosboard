@@ -15,13 +15,8 @@ export function createWorker(fetchKeys = fetch, providerFetch = fetch) {
     let owner;
     try { owner = await verifyIdentity(request, env, fetchKeys); }
     catch {
-      if (!path.startsWith('/api/') && path !== '/api' && ['GET', 'HEAD'].includes(request.method) &&
-          /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_ISSUER)) {
-        const login = new URL('/cdn-cgi/access/login/command-app-secure-staging.caring-philodendron.workers.dev', env.ACCESS_ISSUER);
-        login.searchParams.set('kid', env.ACCESS_AUD);
-        login.searchParams.set('redirect_url', '/');
-        return new Response(null, {status: 302, headers: {location: login.href, 'cache-control': 'no-store'}});
-      }
+      // Cloudflare Access initiates login before the Worker runs. Redirecting
+      // a rejected assertion back to Access can loop on the same session.
       return json({error: 'Authentication required'}, 401);
     }
     if (path === '/api/health') return json({ok: true, aiConfigured: env.AI_ENABLED === 'true' && !!env.OPENAI_API_KEY, storageVerified: false}, 200);

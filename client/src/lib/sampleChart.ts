@@ -1,37 +1,41 @@
 export type ChartRange = "7D" | "30D" | "MTD";
 const dayMs = 86_400_000;
+const kabulDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kabul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const dateLabelFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+const moneyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+const shortDateFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+});
+
 export function workspaceDate(now = new Date()) {
-  const iso = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kabul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
+  const iso = kabulDateFormatter.format(now);
   const date = new Date(`${iso}T00:00:00Z`);
   return {
     iso,
     time: date.getTime(),
-    label: new Intl.DateTimeFormat("en-US", {
-      timeZone: "UTC",
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(date),
+    label: dateLabelFormatter.format(date),
   };
 }
-export const formatMoney = (amount: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(amount);
-const shortDate = (time: number) =>
-  new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-  }).format(time);
+
+export const formatMoney = (amount: number) => moneyFormatter.format(amount);
+const shortDate = (time: number) => shortDateFormatter.format(time);
 
 // Fictional daily fixtures shared by every range. Totals are derived, never forecasts.
 export function buildSampleChart(
