@@ -4,7 +4,7 @@ async function openAnalyst(page:import('@playwright/test').Page){
  await page.route('**/api/account',route=>route.fulfill({json:{userId:'ai-ui-test'}}));
  await page.route('**/api/workspace',route=>route.fulfill({json:{revision:1,data:{products:[{id:'p',name:'Desk'}],videos:[{id:'v1',title:'One',views:2000,commission:20},{id:'v2',title:'Two',views:1000,commission:2}]}}}));
  await page.route('**/api/ai/status',route=>route.fulfill({json:{enabled:true,model:'gpt-5.4-mini',remaining:9,limit:10}}));
- await page.goto('/');const menu=page.getByRole('button',{name:'Open menu',exact:true});if(await menu.isVisible())await menu.click();await page.getByRole('button',{name:'Analyst',exact:true}).click();
+ await page.goto('/');await expect(page.getByText('Command · authenticated cloud workspace',{exact:true})).toBeVisible();const menu=page.getByRole('button',{name:'Open menu',exact:true});if(await menu.isVisible())await menu.click();await page.getByRole('button',{name:'Analyst',exact:true}).click();
 }
 test('AI generation is opt-in, account-bound and displays a confirmed live result (mock provider)',async({page})=>{
  let calls=0;
