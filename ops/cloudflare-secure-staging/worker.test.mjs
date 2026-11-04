@@ -22,13 +22,8 @@ test('anonymous root, nested assets and APIs fail closed without fetching assets
   const f=fixture();
   for(const path of ['/', '/assets/app.js','/dashboard','/api/account','/api/workspace']) {
     const response=await worker.fetch(await request(path),f.env);
-    assert.equal(response.status,path.startsWith('/api/')?401:302);
-    if(response.status===302){
-      const login=new URL(response.headers.get('location'));
-      assert.equal(login.origin,f.env.ACCESS_ISSUER);
-      assert.equal(login.searchParams.get('kid'),f.env.ACCESS_AUD);
-      assert.equal(login.searchParams.get('redirect_url'),'/');
-    }
+    assert.equal(response.status,401);
+    assert.equal(response.headers.get('location'),null);
   }
   assert.equal(f.assetCalls,0);
 });
@@ -48,4 +43,13 @@ test('AI stays disabled for authenticated users and health does not claim storag
 test('missing asset binding blocks access instead of exposing a partial app',async()=>{
   const f=fixture();delete f.env.ASSETS;
   assert.equal((await worker.fetch(await request('/',true),f.env)).status,503);
+});
+
+test('a rejected Access assertion cannot restart the login flow',async()=>{
+  const f=fixture();
+  const invalid=new Request('https://staging.test/',{headers:{'Cf-Access-Jwt-Assertion':'invalid'}});
+  const response=await worker.fetch(invalid,f.env);
+  assert.equal(response.status,401);
+  assert.equal(response.headers.get('location'),null);
+  assert.equal(f.assetCalls,0);
 });

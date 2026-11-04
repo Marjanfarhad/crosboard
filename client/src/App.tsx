@@ -392,6 +392,7 @@ export default function App() {
             <span>{CLOUD?"Signed in with Access":"Demo visitor"}</span>
             <MoreHorizontal size={16} />
           </button>
+          {CLOUD&&<button className="outline-button" disabled={cloud.status==='saving'} onClick={()=>location.assign('/cdn-cgi/access/logout')}>Sign out</button>}
         </div>
       </aside>
 
@@ -934,7 +935,6 @@ export default function App() {
         <p>
           {CLOUD?"Products and video logs load from your authenticated cloud workspace. Conflicts or failed saves stop editing until reload.":"Add sample products and find them by title. Products and checklist changes are kept in memory until reload; they are not backed up or synced."}
         </p>
-        {CLOUD&&<button className="outline-button" disabled={cloud.status==='saving'} onClick={()=>location.assign('/cdn-cgi/access/logout')}>Sign out</button>}
         <h3>Performance</h3>
         <p>
           7D covers seven dates, 30D covers thirty dates, and MTD starts on the
