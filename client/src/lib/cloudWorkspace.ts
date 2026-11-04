@@ -49,10 +49,11 @@ export function useCloudWorkspace(enabled:boolean){
   }catch(cause){setError(cause instanceof Error?cause.message:'Cloud save failed');setStatus('error');throw cause;}
   finally{busy.current=false;}
  },[]);
- return {snapshot,status,error,save};
+ return {snapshot,status,error,save,userId:owner.current};
 }
 export function videoTotals(videos:CloudVideo[]){
  const sum=(key:'views'|'clicks'|'orders'|'commission')=>videos.reduce((total,v)=>total+(typeof v[key]==='number'&&Number.isFinite(v[key])&&v[key]>=0?v[key]:0),0);
  const views=sum('views'),commission=sum('commission');
  return {views,commission,clicks:sum('clicks'),orders:sum('orders'),rpm:views>0?commission/views*1000:0};
 }
+
