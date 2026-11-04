@@ -1,0 +1,26 @@
+name: Publish Command privacy policy to Cloudflare Pages
+on:
+  push:
+    branches: [ops/publish-command-privacy-pages]
+    paths:
+      - .github/workflows/command-privacy-pages.yml
+      - ops/command-privacy-page/index.html
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Create a separate Pages project and publish only the policy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          npx --yes wrangler@4 pages project create command-privacy --production-branch main
+          npx --yes wrangler@4 pages deploy ops/command-privacy-page --project-name command-privacy --branch main

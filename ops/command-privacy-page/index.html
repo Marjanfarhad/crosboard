@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How Command handles workspace information and TikTok Login Kit sandbox data.">
+<title>Command Privacy Policy</title>
+<style>
+body{margin:0;background:#f5f7fa;color:#172332;font:1rem/1.65 system-ui,sans-serif}main{max-width:44rem;margin:auto;padding:3rem 1.25rem 4rem}h1,h2{line-height:1.2}h1{font-size:2.6rem}h2{margin-top:2rem;font-size:1.35rem}a{color:#124f86}header{border-bottom:1px solid #c6d1dd;padding-bottom:1rem}
+</style>
+</head>
+<body><main>
+<header><h1>Command Privacy Policy</h1><p>Effective November 5, 2026</p><p>This policy covers Command’s staging workspace and its TikTok Login Kit sandbox test. Command is maintained by Farhad Marjan.</p></header>
+<h2>Information Command handles</h2>
+<p>Cloudflare Access authenticates staging users. Command uses the verified account identifier to locate that user’s workspace. Workspace data includes information users enter or import, such as product names and prices, video titles and metrics, notes, and reminders. Command stores these records in Cloudflare D1. Cloudflare may record sign-in decisions and request information for security and troubleshooting.</p>
+<h2>TikTok Login Kit sandbox test</h2>
+<p>If the sandbox test is enabled and you choose to authorize it, Command requests TikTok’s basic profile permission (<code>user.info.basic</code>). The test requests only the app-specific TikTok user identifier (<code>open_id</code>) from the profile endpoint and checks that it matches the identifier returned during token exchange.</p>
+<p>Command stores a single-use authorization state linked to your Command account. It expires after five minutes and is consumed on callback. Command handles the authorization code and access token on the server for the profile check. The test does not save TikTok tokens or profile identifiers in the workspace, import videos or metrics, or post to TikTok.</p>
+<h2>Use and service providers</h2>
+<p>Command uses workspace information to save and display your records. It uses sign-in and authorization data to control access, verify the sandbox integration, and troubleshoot failures. Cloudflare provides authentication, hosting and storage. TikTok handles consent, token exchange and the profile request when you choose to use Login Kit.</p>
+<h2>Retention and your choices</h2>
+<p>Workspace records remain stored until removed from the workspace or deleted by the maintainer. An expired authorization state cannot be used, although its database row may remain until it is replaced or removed. You can decline TikTok authorization and continue using Command’s manual entry and CSV features. You can manage TikTok permissions in your TikTok account settings.</p>
+<h2>Contact</h2>
+<p>For privacy questions or requests to access, correct, or delete information, open a general request in the <a href="https://github.com/Marjanfarhad/crosboard/issues">Command issue tracker</a> and ask for a private follow-up. The tracker is public. Keep personal information, workspace records, passwords and verification codes out of the issue.</p>
+</main></body>
+</html>
