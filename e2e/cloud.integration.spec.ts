@@ -28,5 +28,5 @@ test('conflict retains the product form and stops further saves (mock API)',asyn
  await page.route('**/api/account',route=>route.fulfill({json:{userId:'conflict-test'}}));
  await page.route('**/api/workspace',route=>route.request().method()==='GET'?route.fulfill({json:{revision:1,data:{products:[],videos:[]}}}):route.fulfill({status:409,json:{error:'Conflict'}}));
  await page.goto('/');await page.getByRole('button',{name:'Add a product',exact:true}).click();await page.getByLabel('Product title',{exact:true}).fill('Unsaved product');await page.getByRole('button',{name:'Add to stack'}).click();
- await expect(page.getByLabel('Product title',{exact:true})).toHaveValue('Unsaved product');await expect(page.getByRole('button',{name:'Add to stack'})).toBeDisabled();await expect(page.getByText('Cloud save paused')).toBeVisible();
+ await expect(page.getByLabel('Product title',{exact:true})).toHaveValue('Unsaved product');await expect(page.getByRole('button',{name:'Add to stack'})).toBeDisabled();await expect(page.getByRole('dialog').getByRole('alert')).toHaveText('Workspace changed or account switched. Reload before editing.');
 });
