@@ -1,0 +1,47 @@
+name: Command React cloud integration
+on:
+  push:
+    branches: [feat/command-cloudflare-source-integration]
+  pull_request:
+    paths:
+      - client/src/App.tsx
+      - client/src/lib/cloudWorkspace*
+      - client/src/components/CloudVideoStudio.tsx
+      - ops/cloudflare-secure-staging/**
+      - .github/workflows/command-react-integration.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm exec vitest run client/src/lib/cloudWorkspace.test.ts client/src/lib/cloudCsv.test.ts
+      - name: Verify Cloudflare backend regression tests
+        run: |
+          node ops/cloudflare-secure-staging/api.test.mjs
+          node ops/cloudflare-secure-staging/worker.test.mjs
+      - name: Build the original React app with cloud sync
+        env:
+          VITE_COMMAND_CLOUD_SYNC: 'true'
+        run: pnpm build:static
+      - name: Install browser for cloud UI regression checks
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test cloud controls on desktop and mobile with a mock API
+        env:
+          VITE_COMMAND_CLOUD_SYNC: 'true'
+        run: pnpm exec playwright test --config playwright.cloud.config.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: command-react-cloud-frontend
+          path: dist/public/

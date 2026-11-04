@@ -15,7 +15,74 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cloud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: command-secure-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm exec vitest run client/src/lib/cloudWorkspace.test.ts client/src/lib/cloudCsv.test.ts
+      - name: Test secure backend
+        working-directory: ops/cloudflare-secure-staging
+        run: |
+          node api.test.mjs
+          node worker.test.mjs
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Test React cloud controls with mock API on desktop and mobile
+        env:
+          VITE_COMMAND_CLOUD_SYNC: 'true'
+        run: pnpm exec playwright test --config playwright.cloud.config.ts
+      - name: Build authenticated React frontend
+        env:
+          VITE_COMMAND_CLOUD_SYNC: 'true'
+        run: pnpm build:static
+      - name: Configure existing Access application and D1
+        working-directory: ops/cloudflare-secure-staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+          COMMAND_STAGING_ALLOWED_EMAIL: ${{ vars.COMMAND_STAGING_ALLOWED_EMAIL }}
+        run: |
+          python3 provision.py
+          node live-storage.test.mjs
+      - name: Deploy React frontend to the existing secure Command Worker
+        working-directory: ops/cloudflare-secure-staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+        run: |
+          cp -a ../../dist/public/. public/
+          npx --yes wrangler@4 deployments list --config wrangler.json
+          npx --yes wrangler@4 deploy --dry-run --config wrangler.json
+          npx --yes wrangler@4 deploy --config wrangler.json
+      - name: Verify anonymous traffic starts Access login
+        run: |
+          node --input-type=module - <<'JS'
+          const url = 'https://command-app-secure-staging.caring-philodendron.workers.dev/';
+          let passed = false;
+          for (let attempt = 0; attempt < 12; attempt++) {
+            const response = await fetch(url, {redirect:'manual', headers:{'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36',Accept:'text/html'}});
+            const location = response.headers.get('location') || '';
+            if ([301,302,303,307,308].includes(response.status) && new URL(location,url).hostname.endsWith('.cloudflareaccess.com')) { passed = true; break; }
+            await new Promise(resolve => setTimeout(resolve,5000));
+          }
+          if (!passed) throw new Error('Login redirect did not pass; Pages promotion stopped.');
+          console.log('Access login redirect verified. React UI with live user sign-in still needs owner confirmation.');
+          JS
+
   build:
+    needs: cloud
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -73,6 +140,17 @@ jobs:
           name: lighthouse-reports-pages-${{ github.run_id }}
           path: artifacts/lighthouse/
           if-no-files-found: error
+      - name: Make the official Pages URL open authenticated Command
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from html import escape
+          target = 'https://command-app-secure-staging.caring-philodendron.workers.dev/'
+          html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=' + escape(target, quote=True) + '"><title>Command</title></head><body><main><h1>Command</h1><p>Opening your secure workspace.</p><a href="' + escape(target, quote=True) + '">Continue to Command</a></main></body></html>'
+          Path('dist/public/index.html').write_text(html)
+          assert '0;url=https://command-app-secure-staging.caring-philodendron.workers.dev/' in html
+          assert '<a href="https://command-app-secure-staging.caring-philodendron.workers.dev/">' in html
+          PY
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

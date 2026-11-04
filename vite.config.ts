@@ -172,7 +172,7 @@ const plugins = [vitePluginPublicPlatformConfig(), react(), tailwindcss(), jsxLo
 
 export default defineConfig({
   plugins,
-  base: "/crosboard/",
+  base: process.env.VITE_COMMAND_CLOUD_SYNC === "true" ? "/" : "/crosboard/",
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
@@ -204,3 +204,4 @@ export default defineConfig({
     },
   },
 });
+
