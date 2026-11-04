@@ -1,3 +1,4 @@
+import {CloudAiPanel} from './components/CloudAiPanel';
 import {CloudWorkspaceTools} from './components/CloudWorkspaceTools';
 import {useCloudWorkspace, videoTotals} from './lib/cloudWorkspace';
 import {CloudVideoStudio} from './components/CloudVideoStudio';
@@ -381,7 +382,7 @@ export default function App() {
             <div className="signal-top">
               <span className="live-dot" /> Sample signal
             </div>
-            <p>{CLOUD?"Your authenticated workspace. Live AI is disabled.":"Explore the workflow with fictional data."}</p>
+            <p>{CLOUD?"Your authenticated workspace. AI has a shared 10-attempt trial limit.":"Explore the workflow with fictional data."}</p>
             <button onClick={() => setShowHelp(true)}>
               About this workspace <ArrowUpRight size={13} />
             </button>
@@ -453,7 +454,7 @@ export default function App() {
           <div className="demo-banner" role="note">
             <strong>{CLOUD?"Command · authenticated cloud workspace":"Demo workspace — sample data"}</strong>
             <span>
-              {CLOUD?"Products and video logs sync to your account. AI and publishing are disabled.":"Products and checklist changes last until reload. No live revenue, AI, analytics or publishing connection."}
+              {CLOUD?"Products and video logs sync to your account. AI is opt-in with a limited trial; publishing is disabled.":"Products and checklist changes last until reload. No live revenue, AI, analytics or publishing connection."}
             </span>
             <button className="text-button" onClick={() => setShowHelp(true)}>
               How it works
@@ -801,7 +802,8 @@ export default function App() {
               </p>
             </section>
           )}
-          {activeNav === "Analyst" && (
+          {CLOUD&&cloud.snapshot&&['Analyst','Creative'].includes(activeNav)&&<CloudAiPanel key={cloud.userId+activeNav} mode={activeNav==='Creative'?'creative':'next'} data={cloud.snapshot.data} userId={cloud.userId} disabled={cloud.status!=='ready'}/>}
+          {!CLOUD && activeNav === "Analyst" && (
             <section className="panel review-panel">
               <div className="section-kicker">Evidence status</div>
               <h2>No live analysis available</h2>
@@ -970,4 +972,5 @@ export default function App() {
     </div>
   );
 }
+
 

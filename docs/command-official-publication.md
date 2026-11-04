@@ -6,6 +6,6 @@ The Pages deployment waits for the Cloudflare job. That job runs TypeScript, uni
 
 The Pages site's existing demo regression and Lighthouse checks run before replacing its upload entrypoint with the redirect. Those audits describe the underlying demo build, not the final redirect landing page. The redirect itself has a simple assertion of the fixed HTTPS target and fallback link.
 
-The existing secure Worker hostname retains "staging" in its name; it is not a newly registered custom domain. The allowed identity and D1 database remain unchanged. AI, TikTok OAuth, publishing, destructive controls, and email/push reminders remain disabled.
+The existing secure Worker hostname retains "staging" in its name; it is not a newly registered custom domain. The allowed identity and D1 database remain unchanged. TikTok OAuth, publishing, destructive controls, and email/push reminders remain disabled. Live AI is gated by the initial provider check and the shared 10-attempt budget described in command-live-ai.md.
 
 A successful automated release is not proof of completed real browser sign-in and saving in the newly deployed React UI. Confirm those flows after release. Roll back the secure Worker using a prior version listed by the Cloudflare deployment step if the new frontend fails; GitHub Pages can be rolled back through its deployment history.

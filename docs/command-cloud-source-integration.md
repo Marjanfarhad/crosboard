@@ -8,7 +8,7 @@ Default builds preserve the existing sample dashboard and GitHub Pages base path
 
 Workspace saves preserve unknown document fields, notes and reminders from the standalone staging frontend, use the server's revision, and include the loaded account ID so a session switch cannot save a previous account's document. Failed saves do not claim success; editing pauses while the current form stays mounted. New sessions fetch their cloud document without uploading demo fixtures or unscoped browser storage.
 
-AI, publishing and TikTok OAuth remain unavailable. There is no change to provider billing. The React version also provides product and video editing, creative-note creation/editing, in-app 24-hour reminders with a mark-logged action, video CSV export/import with an append confirmation, a workspace JSON download and sign-out. Destructive delete/clear actions are intentionally omitted from the review UI. Email/push reminders, live AI, publishing and TikTok OAuth are not active.
+AI is available only after the limited live-provider activation described in command-live-ai.md; publishing and TikTok OAuth remain unavailable. There is no change to provider billing. The React version also provides product and video editing, creative-note creation/editing, in-app 24-hour reminders with a mark-logged action, video CSV export/import with an append confirmation, a workspace JSON download and sign-out. Destructive delete/clear actions are intentionally omitted from the review UI. Email/push reminders, publishing and TikTok OAuth remain inactive; AI activation uses the separate limited-trial checks in command-live-ai.md.
 
 ## Verification and rollout
 
