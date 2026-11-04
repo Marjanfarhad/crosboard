@@ -34,16 +34,21 @@ export async function verifyIdentity(request,env,fetchKeys=fetch) {
     if(claims.nbf!==undefined&&(typeof claims.nbf!=='number'||claims.nbf>now))throw new AccessIdentityError('AUTH_NOT_YET_VALID');
     if(typeof claims.sub!=='string'||!claims.sub||claims.sub.length>256)throw new AccessIdentityError('AUTH_INVALID');
     if(!signingKeys){
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try{
-        const requestKeys = fetchKeys === globalThis.fetch ? globalThis.fetch.bind(globalThis) : fetchKeys;
-        const response=await requestKeys(env.ACCESS_ISSUER+'/cdn-cgi/access/certs',{redirect:'error',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+        const url = env.ACCESS_ISSUER+'/cdn-cgi/access/certs';
+        const options = {redirect:'manual',headers:{Accept:'application/json'},signal:controller.signal};
+        const response = fetchKeys === globalThis.fetch
+          ? await globalThis.fetch(url, options)
+          : await fetchKeys(url, options);
         if(!response.ok)throw new AccessIdentityError(response.status===503?'AUTH_KEYS_UNAVAILABLE':'AUTH_KEYS_HTTP_'+response.status,503);
         try{signingKeys=(await response.json())?.keys;}catch{throw new AccessIdentityError('AUTH_KEYS_RESPONSE',503);}
         if(!Array.isArray(signingKeys))throw new AccessIdentityError('AUTH_KEYS_RESPONSE',503);
       }catch(error){
         if(error instanceof AccessIdentityError)throw error;
         throw new AccessIdentityError(error?.name==='TimeoutError'||error?.name==='AbortError'?'AUTH_KEYS_TIMEOUT':'AUTH_KEYS_FETCH',503);
-      }
+      }finally{clearTimeout(timeout);}
     }
     const jwk=signingKeys.find(key=>key.kid===header.kid&&key.kty==='RSA');
     if(!jwk)throw new AccessIdentityError('AUTH_SIGNING_KEY');
