@@ -1,0 +1,209 @@
+name: Docker security comparison
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - package.json
+      - server/_core/**
+      - pnpm-workspace.yaml
+      - pnpm-lock.yaml
+      - .dockerignore
+      - .github/workflows/docker-security.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout proposed change
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build candidate Docker image
+        run: docker build --pull --tag crosboard:candidate .
+
+      - name: Assert runtime is non-root
+        run: |
+          actual_uid="$(docker run --rm --entrypoint id crosboard:candidate -u)"
+          echo "Runtime UID: ${actual_uid}"
+          test "${actual_uid}" != "0"
+
+      - name: Verify production runtime has no global npm tooling
+        run: |
+          docker run --rm --entrypoint node crosboard:candidate --input-type=commonjs -e "const fs=require('node:fs'); const p=['/usr/local/lib/node_modules/npm','/usr/local/lib/node_modules/corepack','/usr/local/bin/npm','/usr/local/bin/npx','/usr/local/bin/corepack']; const present=p.filter(x=>fs.existsSync(x)); if(present.length){console.error('Unexpected runtime tooling:',present);process.exit(1)} console.log('No npm/Corepack found in final runtime')"
+
+      - name: Smoke-test container and HTTP health endpoint
+        run: |
+          set -euo pipefail
+          container_id="$(docker run --detach --publish 127.0.0.1:18080:3000 crosboard:candidate)"
+          trap 'docker logs "${container_id}" || true; docker rm --force "${container_id}" || true' EXIT
+          success=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:18080/api/health; then
+              success=1
+              break
+            fi
+            sleep 2
+          done
+          test "${success}" = 1
+          echo
+          echo "Candidate health endpoint responded successfully"
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:18080/crosboard/ > /tmp/crosboard-page.html
+          grep -qi '<html' /tmp/crosboard-page.html
+          callback_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/api/oauth/callback)"
+          test "${callback_status}" = "400"
+          echo "Static HTML and unauthenticated OAuth callback checks passed"
+
+      - name: Verify isolated MySQL and Drizzle runtime connectivity
+        run: |
+          set -euo pipefail
+          docker network create crosboard-ci-db
+          docker run -d --name crosboard-ci-mysql --network crosboard-ci-db \
+            -e MYSQL_ROOT_PASSWORD=isolated-ci-only \
+            -e MYSQL_DATABASE=crosboard_ci mysql:8.4
+          cleanup() {
+            docker rm -f crosboard-ci-mysql >/dev/null 2>&1 || true
+            docker network rm crosboard-ci-db >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          ready=0
+          for attempt in $(seq 1 45); do
+            if docker exec crosboard-ci-mysql mysqladmin ping -h127.0.0.1 -uroot -pisolated-ci-only --silent >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          # Apply only to the disposable CI database; never connect to production.
+          docker exec -i crosboard-ci-mysql mysql -uroot -pisolated-ci-only crosboard_ci < docs/sql/auth-sessions-staging.sql
+          docker run --rm --network crosboard-ci-db --entrypoint node crosboard:candidate --input-type=module -e "
+            import mysql from 'mysql2/promise';
+            import { drizzle } from 'drizzle-orm/mysql2';
+            import { sql, eq } from 'drizzle-orm';
+            import { mysqlTable, int, varchar } from 'drizzle-orm/mysql-core';
+            const client = await mysql.createConnection({
+              host: 'crosboard-ci-mysql',
+              user: 'root',
+              password: 'isolated-ci-only',
+              database: 'crosboard_ci'
+            });
+            const db = drizzle(client);
+            await db.execute(sql\`SELECT 1 AS healthcheck\`);
+            await client.execute('CREATE TABLE users (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, openId VARCHAR(64) NOT NULL UNIQUE, name VARCHAR(255) NULL)');
+            const users = mysqlTable('users', {
+              id: int('id').autoincrement().primaryKey(),
+              openId: varchar('openId',{length:64}).notNull().unique(),
+              name: varchar('name',{length:255})
+            });
+            await db.insert(users).values({openId:'synthetic-oauth-user',name:'Initial'}).onDuplicateKeyUpdate({set:{name:'Initial'}});
+            await db.insert(users).values({openId:'synthetic-oauth-user',name:'Updated'}).onDuplicateKeyUpdate({set:{name:'Updated'}});
+            const rows = await db.select().from(users).where(eq(users.openId,'synthetic-oauth-user'));
+            if (rows.length !== 1 || rows[0].name !== 'Updated') throw new Error('Isolated insert/upsert/read roundtrip failed');
+            await db.delete(users).where(eq(users.openId,'synthetic-oauth-user'));
+            const afterDelete = await db.select().from(users).where(eq(users.openId,'synthetic-oauth-user'));
+            if (afterDelete.length) throw new Error('Isolated deletion failed');
+            const sessionHash = 'a'.repeat(64);
+            await client.execute(
+              'INSERT INTO auth_sessions (idHash, openId, expiresAt) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 DAY))',
+              [sessionHash, 'synthetic-oauth-user']
+            );
+            const [activeBefore] = await client.execute(
+              'SELECT idHash FROM auth_sessions WHERE idHash=? AND openId=? AND revokedAt IS NULL AND expiresAt > NOW()',
+              [sessionHash, 'synthetic-oauth-user']
+            );
+            if (activeBefore.length !== 1) throw new Error('Session registry lookup failed');
+            await client.execute('UPDATE auth_sessions SET revokedAt=NOW() WHERE idHash=?', [sessionHash]);
+            const [activeAfter] = await client.execute(
+              'SELECT idHash FROM auth_sessions WHERE idHash=? AND openId=? AND revokedAt IS NULL AND expiresAt > NOW()',
+              [sessionHash, 'synthetic-oauth-user']
+            );
+            if (activeAfter.length !== 0) throw new Error('Revoked session remained active');
+            await client.end();
+            console.log('Isolated user CRUD and session revocation table checks passed');
+          "
+
+      - name: Checkout baseline Dockerfile from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+          persist-credentials: false
+
+      - name: Build baseline Docker image
+        run: docker build --pull --tag crosboard:baseline ./baseline
+
+      - name: Scan candidate container for vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: crosboard:candidate
+          format: json
+          output: candidate-trivy.json
+          exit-code: '0'
+          scanners: vuln
+
+      - name: Scan baseline container for vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: crosboard:baseline
+          format: json
+          output: baseline-trivy.json
+          exit-code: '0'
+          scanners: vuln
+
+      - name: Summarize CVE counts by severity
+        run: |
+          python3 - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          def count(path):
+              data = json.loads(Path(path).read_text())
+              return Counter(v.get("Severity", "UNKNOWN") for r in data.get("Results", []) for v in (r.get("Vulnerabilities") or []))
+          baseline = count("baseline-trivy.json")
+          candidate = count("candidate-trivy.json")
+          lines = ["## Docker vulnerability comparison", "", "| Severity | Baseline | Candidate | Difference |", "|---|---:|---:|---:|"]
+          for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]:
+              a, b = baseline[severity], candidate[severity]
+              lines.append(f"| {severity} | {a} | {b} | {b-a:+d} |")
+          lines += ["", "Counts are scanner findings (not deduplicated CVE IDs). Review JSON reports for actual packages, fixes and false positives."]
+          report = "\n".join(lines) + "\n"
+          print(report)
+          Path("docker-cve-summary.md").write_text(report)
+          summary_path = __import__("os").environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a") as stream:
+                  stream.write(report)
+          PY
+
+      - name: Require patched critical CVEs to be absent
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("candidate-trivy.json").read_text())
+          findings = [v for r in data.get("Results", []) for v in (r.get("Vulnerabilities") or [])]
+          patched = {"CVE-2026-25896", "CVE-2026-90711"}
+          remaining = [(v.get("VulnerabilityID"), v.get("PkgName"), v.get("InstalledVersion")) for v in findings if v.get("VulnerabilityID") in patched]
+          if remaining:
+              raise SystemExit(f"Critical fix regression: {remaining}")
+          print("Both targeted critical CVEs are absent from production image")
+          PY
+
+      - name: Upload scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-security-reports
+          path: |
+            candidate-trivy.json
+            baseline-trivy.json
+            docker-cve-summary.md
+          if-no-files-found: ignore

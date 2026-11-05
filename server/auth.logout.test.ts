@@ -1,62 +1,50 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
+import { sdk } from "./_core/sdk";
 import { COOKIE_NAME } from "../shared/const";
-import type { TrpcContext } from "./_core/context";
 
-type CookieCall = {
-  name: string;
-  options: Record<string, unknown>;
-};
+afterEach(() => vi.restoreAllMocks());
 
-type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
-
-function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] } {
-  const clearedCookies: CookieCall[] = [];
-
-  const user: AuthenticatedUser = {
-    id: 1,
-    openId: "sample-user",
-    email: "sample@example.com",
-    name: "Sample User",
-    loginMethod: "manus",
-    role: "user",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    lastSignedIn: new Date(),
-  };
-
-  const ctx: TrpcContext = {
-    user,
+function caller(cookie?: string, bearer?: string) {
+  const clearCookie = vi.fn();
+  const ctx = {
     req: {
-      protocol: "https",
-      headers: {},
-    } as TrpcContext["req"],
-    res: {
-      clearCookie: (name: string, options: Record<string, unknown>) => {
-        clearedCookies.push({ name, options });
+      headers: {
+        cookie: cookie ? `${COOKIE_NAME}=${cookie}` : "",
+        authorization: bearer ? `Bearer ${bearer}` : undefined,
       },
-    } as TrpcContext["res"],
+    },
+    res: { clearCookie },
+    user: null,
   };
-
-  return { ctx, clearedCookies };
+  return { api: appRouter.createCaller(ctx as never), clearCookie };
 }
 
-describe("auth.logout", () => {
-  it("clears the session cookie and reports success", async () => {
-    const { ctx, clearedCookies } = createAuthContext();
-    const caller = appRouter.createCaller(ctx);
-
-    const result = await caller.auth.logout();
-
-    expect(result).toEqual({ success: true });
-    expect(clearedCookies).toHaveLength(1);
-    expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
-    expect(clearedCookies[0]?.options).toMatchObject({
-      maxAge: -1,
-      secure: true,
-      sameSite: "none",
-      httpOnly: true,
-      path: "/",
-    });
+describe("logout revocation boundary", () => {
+  it("revokes the cookie token before reporting successful logout", async () => {
+    const revoke = vi.spyOn(sdk, "revokeSessionToken").mockResolvedValue();
+    const { api, clearCookie } = caller("synthetic-token");
+    await expect(api.auth.logout()).resolves.toEqual({ success: true });
+    expect(revoke).toHaveBeenCalledWith("synthetic-token");
+    expect(clearCookie).toHaveBeenCalledWith(COOKIE_NAME, expect.objectContaining({ httpOnly: true, secure: true }));
+  });
+  it("revokes a bearer session when there is no cookie", async () => {
+    const revoke = vi.spyOn(sdk, "revokeSessionToken").mockResolvedValue();
+    const { api } = caller(undefined, "synthetic-bearer");
+    await expect(api.auth.logout()).resolves.toEqual({ success: true });
+    expect(revoke).toHaveBeenCalledWith("synthetic-bearer");
+  });
+  it("does not claim server-side logout success when revocation storage fails", async () => {
+    vi.spyOn(sdk, "revokeSessionToken").mockRejectedValue(new Error("Synthetic database unavailable"));
+    const { api, clearCookie } = caller("synthetic-token");
+    await expect(api.auth.logout()).rejects.toThrow("Synthetic database unavailable");
+    expect(clearCookie).toHaveBeenCalledWith(COOKIE_NAME, expect.any(Object));
+  });
+  it("can clear an absent cookie without claiming to revoke a token", async () => {
+    const revoke = vi.spyOn(sdk, "revokeSessionToken").mockResolvedValue();
+    const { api, clearCookie } = caller();
+    await expect(api.auth.logout()).resolves.toEqual({ success: true });
+    expect(revoke).toHaveBeenCalledWith(undefined);
+    expect(clearCookie).toHaveBeenCalled();
   });
 });
