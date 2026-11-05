@@ -2,8 +2,7 @@ name: Deploy CROS to GitHub Pages
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches: [main, fix/pr12-main-reconciliation-20261105]
 
 permissions:
   contents: read
@@ -11,11 +10,57 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  safe-ci:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/pr12-main-reconciliation-20261105'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Verify every deployment job is fail-closed
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const workflow = readFileSync('.github/workflows/deploy-pages.yml', 'utf8');
+          const sections = Object.fromEntries(
+            [...workflow.matchAll(/^  ([a-z][a-z-]*):\n([\s\S]*?)(?=^  [a-z][a-z-]*:\n|$(?![\s\S]))/gm)]
+              .map(([,name,body]) => [name,body])
+          );
+          for (const name of ['cloud','build','deploy']) {
+            assert.ok(sections[name], 'Missing protected job: ' + name);
+            const first = sections[name].split('\n').find(line => line.trim().startsWith('if:'));
+            assert.equal(first?.trim(), "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+              name + ' must only run on main push');
+          }
+          assert.ok(sections['safe-ci'], 'Missing isolated safe-ci job');
+          assert.match(sections['safe-ci'], /refs\/heads\/fix\/pr12-main-reconciliation-20261105/);
+          assert.ok(!/^\s*workflow_dispatch:/m.test(workflow), 'Manual dispatch must not be exposed');
+          assert.match(sections.cloud, /AI_ENABLED='false'/);
+          assert.doesNotMatch(sections.cloud, /provider-smoke\.mjs|OPENAI_API_KEY/);
+          console.log('PASS: cloud/build/deploy guarded; branch CI isolated; no manual dispatch/provider call.');
+          JS
+      - name: Test secure backend without live providers
+        working-directory: ops/cloudflare-secure-staging
+        run: |
+          node api.test.mjs
+          node worker.test.mjs
+          node ai.test.mjs
+
   cloud:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -49,6 +94,7 @@ jobs:
           VITE_COMMAND_CLOUD_SYNC: 'true'
         run: pnpm build:static
       - name: Configure existing Access application and D1
+        if: github.ref == 'refs/heads/main'
         working-directory: ops/cloudflare-secure-staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -57,33 +103,92 @@ jobs:
         run: |
           python3 provision.py
           node live-storage.test.mjs
-      - name: Verify the initial real OpenAI response before enabling live AI
-        if: vars.COMMAND_ENABLE_LIVE_AI == 'true'
+      - name: Resolve existing staging bindings without provisioning
+        if: github.ref != 'refs/heads/main'
         working-directory: ops/cloudflare-secure-staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: node provider-smoke.mjs
+          COMMAND_STAGING_ALLOWED_EMAIL: ${{ vars.COMMAND_STAGING_ALLOWED_EMAIL }}
+        run: |
+          python3 - <<'PY'
+          """Provision only the separately named staging resources; never expose tokens."""
+          import json
+          import os
+          from pathlib import Path
+          import urllib.request
+          import urllib.error
+          
+          account = os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token = os.environ['CLOUDFLARE_API_TOKEN']
+          email = os.environ.get('COMMAND_STAGING_ALLOWED_EMAIL', '').strip()
+          if not email or '@' not in email:
+              raise SystemExit('Set repository variable COMMAND_STAGING_ALLOWED_EMAIL before provisioning.')
+          base = f'https://api.cloudflare.com/client/v4/accounts/{account}'
+          
+          def api(path, method='GET', body=None):
+              req = urllib.request.Request(base + path, method=method,
+                  headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+                  data=None if body is None else json.dumps(body).encode())
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      result = json.load(response)
+              except urllib.error.HTTPError as error:
+                  details = json.load(error).get('errors', [])
+                  summary = '; '.join(str(item.get('code')) + ': ' + str(item.get('message', ''))[:300] for item in details)
+                  raise SystemExit(f'Cloudflare {method} {path}: HTTP {error.code}. {summary}') from None
+              if not result.get('success'):
+                  raise SystemExit(f'Cloudflare {method} {path} failed.')
+              return result['result']
+          
+          hostname = 'command-app-secure-staging.caring-philodendron.workers.dev'
+          apps = api('/access/apps?per_page=1000')
+          matches = [app for app in apps if app.get('domain') == hostname]
+          if len(matches) != 1 or not matches[0].get('aud'):
+              raise SystemExit('Expected one existing staging Access application with an audience.')
+          app = matches[0]
+          policies = api('/access/apps/' + app['id'] + '/policies')
+          if len(policies) != 1 or policies[0].get('decision') != 'allow' or policies[0].get('include') != [{'email': {'email': email}}]:
+              raise SystemExit('Existing staging Access policy differs.')
+          databases = api('/d1/database?per_page=100')
+          matches = [db for db in databases if db.get('name') == 'command-secure-staging']
+          if len(matches) != 1 or not matches[0].get('uuid'):
+              raise SystemExit('Expected one existing staging D1 binding.')
+          config = json.loads(Path('wrangler.example.json').read_text())
+          config['d1_databases'][0]['database_id'] = matches[0]['uuid']
+          config['vars']['ACCESS_AUD'] = app['aud']
+          config['vars']['AI_ENABLED'] = 'false'
+          Path('wrangler.json').write_text(json.dumps(config, indent=2))
+          PY
+      # Live AI is deliberately disabled for the initial secure release.
+      # Re-enabling it requires a separate reviewed workflow change and provider approval.
+      - name: Verify AI-disabled release gate (no provider request)
+        working-directory: ops/cloudflare-secure-staging
+        run: |
+          node ai.test.mjs
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const config=JSON.parse(readFileSync('wrangler.json','utf8'));
+          assert.notEqual(config.vars?.AI_ENABLED,'true','Live AI must remain disabled');
+          console.log('PASS: AI remains disabled; no OpenAI provider request.');
+          JS
       - name: Deploy React frontend to the existing secure Command Worker
         working-directory: ops/cloudflare-secure-staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          COMMAND_ENABLE_LIVE_AI: ${{ vars.COMMAND_ENABLE_LIVE_AI }}
         run: |
           node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
           import {readFileSync,writeFileSync} from 'node:fs';
-          const enableAi=process.env.COMMAND_ENABLE_LIVE_AI==='true';
-          if (enableAi&&!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY secret is missing');
           const config=JSON.parse(readFileSync('wrangler.json','utf8'));
-          config.vars.AI_ENABLED=enableAi?'true':'false';
+          config.vars ??= {};
+          config.vars.AI_ENABLED='false';
           writeFileSync('wrangler.json',JSON.stringify(config));
+          assert.equal(config.vars.AI_ENABLED,'false');
+          console.log('AI disabled for this deployment; no OpenAI key installed.');
           JS
-          if [ "$COMMAND_ENABLE_LIVE_AI" = "true" ]; then
-            printf '%s' "$OPENAI_API_KEY" | npx --yes wrangler@4 secret put OPENAI_API_KEY --config wrangler.json
-          fi
           cp -a ../../dist/public/. public/
           npx --yes wrangler@4 deployments list --config wrangler.json
           npx --yes wrangler@4 deploy --dry-run --config wrangler.json
@@ -104,6 +209,7 @@ jobs:
           JS
 
   build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: cloud
     runs-on: ubuntu-latest
     steps:
@@ -179,6 +285,7 @@ jobs:
           path: dist/public
 
   deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -188,5 +295,4 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
 
