@@ -2,8 +2,7 @@ name: Deploy CROS to GitHub Pages
 
 on:
   push:
-    branches: [main, fix/ai-disabled-safe-deploy-20261104, feat/staging-tiktok-oauth-smoke]
-  workflow_dispatch:
+    branches: [main]
 
 permissions:
   contents: read
@@ -16,7 +15,7 @@ concurrency:
 
 jobs:
   cloud:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/fix/ai-disabled-safe-deploy-20261104' && github.event.head_commit.message == 'Deploy PR 12 authentication fix to staging once') || (github.ref == 'refs/heads/feat/staging-tiktok-oauth-smoke' && github.event.head_commit.message == 'Deploy TikTok Sandbox OAuth to Command staging')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
