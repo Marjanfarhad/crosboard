@@ -3,7 +3,6 @@ name: Deploy CROS to GitHub Pages
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,11 +10,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   cloud:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -104,6 +104,7 @@ jobs:
           JS
 
   build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'
     needs: cloud
     runs-on: ubuntu-latest
     steps:
@@ -179,6 +180,7 @@ jobs:
           path: dist/public
 
   deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
