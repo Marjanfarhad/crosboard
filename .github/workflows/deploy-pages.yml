@@ -2,8 +2,7 @@ name: Deploy CROS to GitHub Pages
 
 on:
   push:
-    branches: [main, fix/ai-disabled-safe-deploy-20261104]
-  workflow_dispatch:
+    branches: [main, fix/pr12-dispatch-gate-20261105]
 
 permissions:
   contents: read
@@ -15,8 +14,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  safe-ci:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/pr12-dispatch-gate-20261105'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Verify every deployment job is fail-closed
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const workflow = readFileSync('.github/workflows/deploy-pages.yml', 'utf8');
+          const sections = Object.fromEntries(
+            [...workflow.matchAll(/^  ([a-z][a-z-]*):\n([\s\S]*?)(?=^  [a-z][a-z-]*:\n|$(?![\s\S]))/gm)]
+              .map(([,name,body]) => [name,body])
+          );
+          for (const name of ['cloud','build','deploy']) {
+            assert.ok(sections[name], 'Missing protected job: ' + name);
+            const first = sections[name].split('\n').find(line => line.trim().startsWith('if:'));
+            assert.equal(first?.trim(), "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+              name + ' must only run on main push');
+          }
+          assert.ok(sections['safe-ci'], 'Missing isolated safe-ci job');
+          assert.match(sections['safe-ci'], /refs\/heads\/fix\/pr12-dispatch-gate-20261105/);
+          assert.ok(!/^\s*workflow_dispatch:/m.test(workflow), 'Manual dispatch must not be exposed');
+          assert.match(sections.cloud, /AI_ENABLED='false'/);
+          assert.doesNotMatch(sections.cloud, /provider-smoke\.mjs|OPENAI_API_KEY/);
+          console.log('PASS: cloud/build/deploy guarded; branch CI isolated; no manual dispatch/provider call.');
+          JS
+      - name: Test secure backend without live providers
+        working-directory: ops/cloudflare-secure-staging
+        run: |
+          node api.test.mjs
+          node worker.test.mjs
+          node ai.test.mjs
+
   cloud:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/fix/ai-disabled-safe-deploy-20261104' && github.event.head_commit.message == 'Deploy PR 12 authentication fix to staging once')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -165,7 +209,7 @@ jobs:
           JS
 
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: cloud
     runs-on: ubuntu-latest
     steps:
@@ -241,7 +285,7 @@ jobs:
           path: dist/public
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
