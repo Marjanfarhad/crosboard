@@ -117,8 +117,11 @@ jobs:
           if os.environ['GITHUB_REF_NAME'] == 'feat/staging-tiktok-oauth-smoke':
               settings = api('/workers/scripts/command-app-secure-staging/settings')
               bindings = {item['name']: item for item in settings.get('bindings', [])}
-              if bindings.get('TIKTOK_CLIENT_SECRET', {}).get('type') != 'secret_text' or not bindings.get('TIKTOK_CLIENT_KEY'):
-                  raise SystemExit('Staging TikTok key or secret binding is missing.')
+              key_type = bindings.get('TIKTOK_CLIENT_KEY', {}).get('type', 'missing')
+              secret_type = bindings.get('TIKTOK_CLIENT_SECRET', {}).get('type', 'missing')
+              print(f'TikTok binding types: client key={key_type}; client secret={secret_type}', flush=True)
+              if secret_type != 'secret_text' or key_type not in ('plain_text', 'secret_text'):
+                  raise SystemExit('Required TikTok staging bindings are missing or have the wrong type.')
               if bindings.get('DB', {}).get('id') != matches[0]['uuid']:
                   raise SystemExit('Active Worker database does not match the staging database.')
               config['vars']['TIKTOK_OAUTH_ENABLED'] = 'true'
