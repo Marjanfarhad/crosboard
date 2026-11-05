@@ -118,7 +118,10 @@ jobs:
               settings = api('/workers/scripts/command-app-secure-staging/settings')
               bindings = {item['name']: item for item in settings.get('bindings', [])}
               key_type = bindings.get('TIKTOK_CLIENT_KEY', {}).get('type', 'missing')
-              secret_type = bindings.get('TIKTOK_CLIENT_SECRET', {}).get('type', 'missing')
+              secrets = api('/workers/scripts/command-app-secure-staging/secrets')
+              secret_type = next((item['type'] for item in secrets if item['name'] == 'TIKTOK_CLIENT_SECRET'), 'missing')
+              if key_type == 'missing' and any(item['name'] == 'TIKTOK_CLIENT_KEY' for item in secrets):
+                  key_type = 'secret_text'
               print(f'TikTok binding types: client key={key_type}; client secret={secret_type}', flush=True)
               if secret_type != 'secret_text' or key_type not in ('plain_text', 'secret_text'):
                   raise SystemExit('Required TikTok staging bindings are missing or have the wrong type.')
