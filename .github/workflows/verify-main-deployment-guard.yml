@@ -24,7 +24,7 @@ jobs:
           const src=readFileSync('.github/workflows/deploy-pages.yml','utf8');
           assert.match(src,/^  push:\s*\n    branches: \[main\]/m);
           assert.doesNotMatch(src,/^  workflow_dispatch:/m);
-          const expected = "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'";
+          const expected = "    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'";
           for (const name of ['cloud','build','deploy']) {
             assert.ok(src.includes('  '+name+':\n'+expected), name+' must require main push');
           }
