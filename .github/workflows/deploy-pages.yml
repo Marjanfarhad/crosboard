@@ -2,7 +2,7 @@ name: Deploy CROS to GitHub Pages
 
 on:
   push:
-    branches: [main, fix/ai-disabled-safe-deploy-20261104]
+    branches: [main, fix/pr12-dispatch-gate-20261105]
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  safe-ci:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/pr12-dispatch-gate-20261105'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Verify deployment gate is fail-closed
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const workflow = readFileSync('.github/workflows/deploy-pages.yml', 'utf8');
+          assert.match(workflow, /if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+          assert.doesNotMatch(workflow, /github\.event_name == 'workflow_dispatch'/);
+          console.log('PASS: cloud deployment restricted to main push; manual dispatch cannot deploy.');
+          JS
+      - name: Test secure backend without live providers
+        working-directory: ops/cloudflare-secure-staging
+        run: |
+          node api.test.mjs
+          node worker.test.mjs
+          node ai.test.mjs
+
   cloud:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/fix/ai-disabled-safe-deploy-20261104' && github.event.head_commit.message == 'Deploy PR 12 authentication fix to staging once')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -165,7 +197,7 @@ jobs:
           JS
 
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: cloud
     runs-on: ubuntu-latest
     steps:
@@ -241,7 +273,7 @@ jobs:
           path: dist/public
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
