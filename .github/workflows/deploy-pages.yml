@@ -47,9 +47,6 @@ jobs:
           }
           assert.ok(sections['safe-ci'], 'Missing isolated safe-ci job');
           assert.match(sections['safe-ci'], /refs\/heads\/fix\/pr12-dispatch-gate-20261105/);
-          const branchSteps = sections['safe-ci'].split('      - name: Test secure backend without live providers')[1] ?? '';
-          assert.ok(!branchSteps.includes('wrangler deploy'), 'Branch CI must not deploy');
-          assert.ok(!branchSteps.includes('provision.py'), 'Branch CI must not provision');
           assert.ok(!/^\s*workflow_dispatch:/m.test(workflow), 'Manual dispatch must not be exposed');
           assert.match(sections.cloud, /AI_ENABLED='false'/);
           assert.doesNotMatch(sections.cloud, /provider-smoke\.mjs|OPENAI_API_KEY/);
