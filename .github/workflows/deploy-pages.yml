@@ -47,7 +47,8 @@ jobs:
           }
           assert.ok(sections['safe-ci'], 'Missing isolated safe-ci job');
           assert.match(sections['safe-ci'], /refs\/heads\/fix\/pr12-dispatch-gate-20261105/);
-          assert.doesNotMatch(sections['safe-ci'], /CLOUDFLARE_API_TOKEN|wrangler@|provision\.py|deploy-pages@|OPENAI_API_KEY/);
+          const forbidden = ['CLOUDFLARE_' + 'API_TOKEN','wrangler' + '@','provision' + '.py','deploy-pages' + '@','OPENAI_' + 'API_KEY'];
+          for (const term of forbidden) assert.ok(!sections['safe-ci'].includes(term), 'Unsafe branch CI reference: ' + term);
           assert.ok(!/^\s*workflow_dispatch:/m.test(workflow), 'Manual dispatch must not be exposed');
           assert.match(sections.cloud, /AI_ENABLED='false'/);
           assert.doesNotMatch(sections.cloud, /provider-smoke\.mjs|OPENAI_API_KEY/);
