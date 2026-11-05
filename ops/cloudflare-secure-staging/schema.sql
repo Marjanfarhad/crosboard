@@ -18,3 +18,9 @@ CREATE TABLE IF NOT EXISTS ai_checks (
   model TEXT PRIMARY KEY,
   verified_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS tiktok_oauth_states (
+  owner_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);

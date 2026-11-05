@@ -1,7 +1,7 @@
 name: Command React cloud integration
 on:
   push:
-    branches: [feat/command-cloudflare-source-integration]
+    branches: [feat/command-cloudflare-source-integration, feat/staging-tiktok-oauth-smoke]
   pull_request:
     paths:
       - client/src/App.tsx
@@ -9,6 +9,7 @@ on:
       - client/src/components/CloudVideoStudio.tsx
       - ops/cloudflare-secure-staging/**
       - .github/workflows/command-react-integration.yml
+      - .github/workflows/deploy-pages.yml
 permissions:
   contents: read
 jobs:
@@ -32,6 +33,7 @@ jobs:
           node ops/cloudflare-secure-staging/api.test.mjs
           node ops/cloudflare-secure-staging/worker.test.mjs
           node ops/cloudflare-secure-staging/ai.test.mjs
+          node ops/cloudflare-secure-staging/tiktok.test.mjs
       - name: Build the original React app with cloud sync
         env:
           VITE_COMMAND_CLOUD_SYNC: 'true'

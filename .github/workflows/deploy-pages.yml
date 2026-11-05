@@ -2,8 +2,7 @@ name: Deploy CROS to GitHub Pages
 
 on:
   push:
-    branches: [main, fix/ai-disabled-safe-deploy-20261104]
-  workflow_dispatch:
+    branches: [main]
 
 permissions:
   contents: read
@@ -16,7 +15,7 @@ concurrency:
 
 jobs:
   cloud:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/fix/ai-disabled-safe-deploy-20261104' && github.event.head_commit.message == 'Deploy PR 12 authentication fix to staging once')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -104,7 +103,7 @@ jobs:
               raise SystemExit('Expected one existing staging Access application with an audience.')
           app = matches[0]
           policies = api('/access/apps/' + app['id'] + '/policies')
-          if len(policies) != 1 or policies[0].get('decision') != 'allow' or policies[0].get('include') != [{'email': {'email': email}}]:
+          if not any(policy.get('decision') == 'allow' and {'email': {'email': email}} in policy.get('include', []) for policy in policies):
               raise SystemExit('Existing staging Access policy differs.')
           databases = api('/d1/database?per_page=100')
           matches = [db for db in databases if db.get('name') == 'command-secure-staging']
@@ -114,6 +113,26 @@ jobs:
           config['d1_databases'][0]['database_id'] = matches[0]['uuid']
           config['vars']['ACCESS_AUD'] = app['aud']
           config['vars']['AI_ENABLED'] = 'false'
+          if os.environ['GITHUB_REF_NAME'] == 'feat/staging-tiktok-oauth-smoke':
+              settings = api('/workers/scripts/command-app-secure-staging/settings')
+              bindings = {item['name']: item for item in settings.get('bindings', [])}
+              key_type = bindings.get('TIKTOK_CLIENT_KEY', {}).get('type', 'missing')
+              secrets = api('/workers/scripts/command-app-secure-staging/secrets')
+              secret_type = next((item['type'] for item in secrets if item['name'] == 'TIKTOK_CLIENT_SECRET'), 'missing')
+              if key_type == 'missing' and any(item['name'] == 'TIKTOK_CLIENT_KEY' for item in secrets):
+                  key_type = 'secret_text'
+              print(f'TikTok binding types: client key={key_type}; client secret={secret_type}', flush=True)
+              if secret_type != 'secret_text' or key_type not in ('plain_text', 'secret_text'):
+                  raise SystemExit('Required TikTok staging bindings are missing or have the wrong type.')
+              if bindings.get('DB', {}).get('id') != matches[0]['uuid']:
+                  raise SystemExit('Active Worker database does not match the staging database.')
+              config['vars']['TIKTOK_OAUTH_ENABLED'] = 'true'
+              schema = Path('schema.sql').read_text()
+              marker = 'CREATE TABLE IF NOT EXISTS tiktok_oauth_states ('
+              if schema.count(marker) != 1:
+                  raise SystemExit('TikTok state table definition is missing or ambiguous.')
+              sql = marker + schema.split(marker, 1)[1].split(';', 1)[0] + ';'
+              api('/d1/database/' + matches[0]['uuid'] + '/query', 'POST', {'sql': sql})
           Path('wrangler.json').write_text(json.dumps(config, indent=2))
           PY
       # Live AI is deliberately disabled for the initial secure release.
@@ -148,7 +167,7 @@ jobs:
           cp -a ../../dist/public/. public/
           npx --yes wrangler@4 deployments list --config wrangler.json
           npx --yes wrangler@4 deploy --dry-run --config wrangler.json
-          npx --yes wrangler@4 deploy --config wrangler.json
+          npx --yes wrangler@4 deploy --keep-vars --config wrangler.json
       - name: Verify anonymous traffic starts Access login
         run: |
           node --input-type=module - <<'JS'

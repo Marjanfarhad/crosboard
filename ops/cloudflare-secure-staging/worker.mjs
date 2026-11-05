@@ -1,3 +1,4 @@
+import {handleTikTok} from './tiktok.mjs';
 import {createAi} from './ai.mjs';
 import {createApi, verifyIdentity, hasAccessCredential} from './api.mjs';
 
@@ -35,6 +36,7 @@ export function createWorker(fetchKeys = fetch, providerFetch = fetch) {
       }
       return json({error:status===503?'Sign-in verification is temporarily unavailable':'Authentication required',code},status);
     }
+    if (path === '/api/tiktok/connect' || path === '/api/tiktok/callback') return handleTikTok(request, env, owner);
     if (path === '/api/health') return json({ok: true, aiConfigured: env.AI_ENABLED === 'true' && !!env.OPENAI_API_KEY, storageVerified: false}, 200);
     if (['/api/creative','/api/next-recommendation','/api/ai/status'].includes(path)) return ai(request, env, owner);
     if (path === '/api' || path.startsWith('/api/')) return api(request, env);
