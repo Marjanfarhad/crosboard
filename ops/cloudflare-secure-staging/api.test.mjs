@@ -75,3 +75,37 @@ test('overlapping Access cookies select only a valid application identity',async
  await assert.rejects(verifyIdentity(request('CF_Authorization='+a+'; CF_Authorization='+await token('b')),f.env,keys),{code:'AUTH_AMBIGUOUS'});
  f.sql.close();
 });
+
+
+test('JWKS HTTP outage, malformed response and network failure fail closed',async()=>{
+ const f=fixture(),jwt=await token('a'),request=new Request('https://app.test/api/workspace',{headers:{'Cf-Access-Jwt-Assertion':jwt}});
+ const scenarios=[
+  {name:'service unavailable',fetchKeys:async()=>new Response('',{status:503}),code:'AUTH_KEYS_UNAVAILABLE'},
+  {name:'invalid JSON',fetchKeys:async()=>new Response('not-json',{status:200}),code:'AUTH_KEYS_RESPONSE'},
+  {name:'missing keys array',fetchKeys:async()=>Response.json({keys:null}),code:'AUTH_KEYS_RESPONSE'},
+  {name:'network failure',fetchKeys:async()=>{throw new Error('offline');},code:'AUTH_KEYS_FETCH'}
+ ];
+ for(const scenario of scenarios){
+  await assert.rejects(verifyIdentity(request,f.env,scenario.fetchKeys),{code:scenario.code},scenario.name);
+  const response=await createApi(scenario.fetchKeys)(request,f.env);
+  assert.equal(response.status,503,scenario.name);
+  assert.equal((await response.json()).code,scenario.code,scenario.name);
+ }
+ f.sql.close();
+});
+test('JWKS missing matching signing key and malformed RSA key reject access',async()=>{
+ const f=fixture(),jwt=await token('a'),request=new Request('https://app.test/',{headers:{'Cf-Access-Jwt-Assertion':jwt}});
+ await assert.rejects(verifyIdentity(request,f.env,async()=>Response.json({keys:[{...jwk,kid:'rotated'}]})),{code:'AUTH_SIGNING_KEY'});
+ await assert.rejects(verifyIdentity(request,f.env,async()=>Response.json({keys:[{kid:'test',kty:'RSA',n:'bad',e:'bad'}]})),{code:'AUTH_SIGNATURE'});
+ f.sql.close();
+});
+test('JWT expiration is enforced but logout alone does not revoke a still-valid token',async()=>{
+ const f=fixture(),keys=async()=>Response.json({keys:[jwk]});
+ const live=await token('a');
+ const request=new Request('https://app.test/',{headers:{'Cf-Access-Jwt-Assertion':live}});
+ assert.equal(await verifyIdentity(request,f.env,keys),'a');
+ // There is no logout/revocation state in verifyIdentity: the same valid JWT remains accepted.
+ assert.equal(await verifyIdentity(request,f.env,keys),'a');
+ await assert.rejects(verifyIdentity(new Request('https://app.test/',{headers:{'Cf-Access-Jwt-Assertion':await token('a',{exp:1})}}),f.env,keys),{code:'AUTH_EXPIRED'});
+ f.sql.close();
+});
