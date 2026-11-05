@@ -46,7 +46,7 @@ jobs:
               name + ' must only run on main push');
           }
           assert.ok(sections['safe-ci'], 'Missing isolated safe-ci job');
-          assert.match(sections['safe-ci'], /refs\/heads\/fix\/pr12-dispatch-gate-20261105/);
+          assert.match(sections['safe-ci'], /refs\/heads\/fix\/pr12-main-reconciliation-20261105/);
           assert.ok(!/^\s*workflow_dispatch:/m.test(workflow), 'Manual dispatch must not be exposed');
           assert.match(sections.cloud, /AI_ENABLED='false'/);
           assert.doesNotMatch(sections.cloud, /provider-smoke\.mjs|OPENAI_API_KEY/);
