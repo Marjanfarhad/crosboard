@@ -1,5 +1,6 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS, decodeOAuthState } from "@shared/const";
+import { AXIOS_TIMEOUT_MS, COOKIE_NAME, decodeOAuthState } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
+import { createHash, randomUUID } from "node:crypto";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
@@ -17,6 +18,9 @@ import type {
 // Utility function
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
+
+// Short-lived sessions with persistent token-hash revocation.
+export const SESSION_LIFETIME_MS = 8 * 60 * 60 * 1000;
 
 export type SessionPayload = {
   openId: string;
@@ -183,7 +187,10 @@ class SDKServer {
     options: { expiresInMs?: number } = {}
   ): Promise<string> {
     const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
+    const expiresInMs = options.expiresInMs ?? SESSION_LIFETIME_MS;
+    if (!Number.isSafeInteger(expiresInMs) || expiresInMs <= 0 || expiresInMs > SESSION_LIFETIME_MS) {
+      throw new Error("Invalid session lifetime");
+    }
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
@@ -193,6 +200,8 @@ class SDKServer {
       name: payload.name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setJti(randomUUID())
+      .setIssuedAt(Math.floor(issuedAt / 1000))
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
@@ -212,6 +221,9 @@ class SDKServer {
         requiredClaims: ["exp"],
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
+      // Every authenticated request checks the shared revocation store.
+      // Database failures reject access rather than accepting a revoked token.
+      if (await db.isSessionRevoked(this.hashSessionToken(cookieValue))) return null;
 
       if (
         !isNonEmptyString(openId) ||
@@ -231,6 +243,42 @@ class SDKServer {
       console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
+  }
+
+  private hashSessionToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  async revokeSessionToken(token: string): Promise<void> {
+    const secretKey = this.getSessionSecret();
+    const { payload } = await jwtVerify(token, secretKey, { algorithms: ["HS256"], requiredClaims: ["exp"] });
+    if (payload.appId !== ENV.appId || typeof payload.openId !== "string" || !payload.openId) {
+      throw new Error("Invalid session identity");
+    }
+    if (typeof payload.exp !== "number") throw new Error("Missing expiry");
+    await db.revokeSession(this.hashSessionToken(token), new Date(payload.exp * 1000));
+  }
+
+  async revokeSessionTokensAtomically(tokens: string[]): Promise<void> {
+    if (!tokens.length) throw new Error("No sessions to revoke");
+    const secretKey = this.getSessionSecret();
+    const sessions = await Promise.all(tokens.map(async (token) => {
+      const { payload } = await jwtVerify(token, secretKey, {
+        algorithms: ["HS256"], requiredClaims: ["exp"],
+      });
+      if (payload.appId !== ENV.appId || typeof payload.openId !== "string" || !payload.openId ||
+          typeof payload.exp !== "number") throw new Error("Invalid session identity");
+      return { tokenHash: this.hashSessionToken(token), expiresAt: new Date(payload.exp * 1000) };
+    }));
+    await db.revokeSessionsAtomically(sessions);
+  }
+
+  sessionTokensFromRequest(req: Request): string[] {
+    const cookies = this.parseCookies(req.headers.cookie);
+    const cookie = cookies.get(COOKIE_NAME);
+    const header = req.headers.authorization;
+    const bearer = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    return [...new Set([cookie, bearer].filter((token): token is string => !!token))];
   }
 
   async getUserInfoWithJwt(

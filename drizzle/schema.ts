@@ -26,3 +26,9 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // TODO: Add your tables here
+/** Hashed JWT identifiers revoked before natural expiration. No raw tokens stored. */
+export const revokedSessions = mysqlTable("revoked_sessions", {
+  tokenHash: varchar("tokenHash", { length: 64 }).primaryKey(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  revokedAt: timestamp("revokedAt").defaultNow().notNull(),
+});
