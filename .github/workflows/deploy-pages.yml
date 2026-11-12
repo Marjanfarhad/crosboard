@@ -15,13 +15,26 @@ concurrency:
 
 jobs:
   cloud:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
       group: command-secure-staging
       cancel-in-progress: false
     steps:
+      - name: Fail closed on missing staging prerequisites and paid AI
+        env:
+          COMMAND_STAGING_ALLOWED_EMAIL: ${{ vars.COMMAND_STAGING_ALLOWED_EMAIL }}
+          COMMAND_ENABLE_LIVE_AI: ${{ vars.COMMAND_ENABLE_LIVE_AI }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$COMMAND_STAGING_ALLOWED_EMAIL" || { echo "::error::Staging owner email missing"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Cloudflare API token missing"; exit 1; }
+          if [ "$COMMAND_ENABLE_LIVE_AI" = "true" ]; then
+            echo "::error::Live paid AI is not authorized for the zero-budget deployment."
+            exit 1
+          fi
+          echo "Staging prerequisites present; live paid AI disabled."
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
@@ -104,7 +117,7 @@ jobs:
           JS
 
   build:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified
     needs: cloud
     runs-on: ubuntu-latest
     steps:
@@ -180,7 +193,7 @@ jobs:
           path: dist/public
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
