@@ -1,7 +1,7 @@
 name: Verify main deployment guard (no deployment)
 on:
   push:
-    branches: [fix/main-deployment-guard-20261105]
+    branches: [main]
   pull_request:
     paths:
       - .github/workflows/deploy-pages.yml
@@ -24,9 +24,16 @@ jobs:
           const src=readFileSync('.github/workflows/deploy-pages.yml','utf8');
           assert.match(src,/^  push:\s*\n    branches: \[main\]/m);
           assert.doesNotMatch(src,/^  workflow_dispatch:/m);
-          const expected = "    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'";
+          const expected = "    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified";
           for (const name of ['cloud','build','deploy']) {
             assert.ok(src.includes('  '+name+':\n'+expected), name+' must require main push');
           }
-          console.log('PASS: deployment jobs main-push only; no manual dispatch');
+          assert.match(src,/Fail closed on missing staging prerequisites and paid AI/);
+          assert.match(src,/test -n "\$COMMAND_STAGING_ALLOWED_EMAIL"/);
+          assert.match(src,/test -n "\$CLOUDFLARE_API_TOKEN"/);
+          assert.match(src,/if \[ "\$COMMAND_ENABLE_LIVE_AI" = "true" \]; then/);
+          const guardPos=src.indexOf('Fail closed on missing staging prerequisites and paid AI');
+          const provisionPos=src.indexOf('python3 provision.py');
+          assert.ok(guardPos>=0 && provisionPos>guardPos,'preflight must precede provisioning');
+          console.log('PASS: main-push guard and staging preflight are present; no deployment triggered');
           JS
