@@ -1,0 +1,32 @@
+name: Verify main deployment guard (no deployment)
+on:
+  push:
+    branches: [fix/main-deployment-guard-20261105]
+  pull_request:
+    paths:
+      - .github/workflows/deploy-pages.yml
+      - .github/workflows/verify-main-deployment-guard.yml
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Assert production deployment is main-push only
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const src=readFileSync('.github/workflows/deploy-pages.yml','utf8');
+          assert.match(src,/^  push:\s*\n    branches: \[main\]/m);
+          assert.doesNotMatch(src,/^  workflow_dispatch:/m);
+          const expected = "    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'";
+          for (const name of ['cloud','build','deploy']) {
+            assert.ok(src.includes('  '+name+':\n'+expected), name+' must require main push');
+          }
+          console.log('PASS: deployment jobs main-push only; no manual dispatch');
+          JS
