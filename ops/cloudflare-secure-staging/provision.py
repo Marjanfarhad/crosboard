@@ -36,8 +36,22 @@ if len(matches) > 1:
 if matches:
     app = matches[0]
     policies = api('/access/apps/' + app['id'] + '/policies')
-    if len(policies) != 1 or policies[0].get('decision') != 'allow' or policies[0].get('include') != [{'email': {'email': email}}]:
-        raise SystemExit('Existing staging Access policies differ; refusing to overwrite them.')
+    # The existing staging app may also have the separately approved isolation
+    # tester policy. Preserve it; reject unknown or broadened policies.
+    owners = [p for p in policies if p.get('name') == 'Staging owner only']
+    if (len(owners) != 1 or owners[0].get('decision') != 'allow'
+            or owners[0].get('include') != [{'email': {'email': email}}]
+            or owners[0].get('exclude') or owners[0].get('require')):
+        raise SystemExit('Staging owner policy differs; refusing to modify Access.')
+    extras = [p for p in policies if p.get('name') != 'Staging owner only']
+    if (len(extras) > 1 or any(
+            p.get('name') != 'Command staging isolation tester'
+            or p.get('decision') != 'allow'
+            or not p.get('include')
+            or any(set(rule) != {'email'} for rule in p['include'])
+            or p.get('exclude') or p.get('require')
+            for p in extras)):
+        raise SystemExit('Unexpected staging Access policy; refusing to modify Access.')
 else:
     app = api('/access/apps', 'POST', {
         'name': 'Command secure staging', 'type': 'self_hosted',
@@ -51,12 +65,27 @@ workers = api('/workers/workers?per_page=100')
 staging = [worker for worker in workers if worker.get('name') == 'command-app-secure-staging']
 if len(staging) != 1:
     raise SystemExit('Expected exactly one deployed staging Worker.')
-app = api('/access/apps/' + app['id'], 'PUT', {
-    'name': app['name'], 'type': 'self_hosted', 'domain': hostname,
-    'session_duration': '1h',
-    'destinations': [{'type': 'public', 'uri': hostname}, {'type': 'worker', 'worker_id': staging[0]['id']}],
-    'policies': policies if matches else app.get('policies', [])
-})
+expected_destinations = [
+    {'type': 'public', 'uri': hostname},
+    {'type': 'worker', 'worker_id': staging[0]['id']},
+]
+if matches:
+    # A valid existing app must remain immutable during provisioning.
+    # Never rewrite its policies or security configuration as a side effect.
+    current = api('/access/apps/' + app['id'])
+    if (current.get('type') != 'self_hosted'
+            or current.get('domain') != hostname
+            or current.get('session_duration') != '1h'
+            or not all(d in current.get('destinations', []) for d in expected_destinations)):
+        raise SystemExit('Existing staging Access configuration differs; refusing to modify it.')
+    app = current
+else:
+    app = api('/access/apps/' + app['id'], 'PUT', {
+        'name': app['name'], 'type': 'self_hosted', 'domain': hostname,
+        'session_duration': '1h',
+        'destinations': expected_destinations,
+        'policies': app.get('policies', []),
+    })
 if not app.get('aud'):
     raise SystemExit('Access application audience missing; deployment stopped.')
 
