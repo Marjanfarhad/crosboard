@@ -18,7 +18,7 @@ export function createWorker(fetchKeys = fetch, providerFetch = fetch) {
       const code=error.code??'AUTH_INVALID';
       const status=error.status??401;
       const url=new URL(request.url);
-      const login=new URL('/cdn-cgi/access/login/command-app-secure-staging.caring-philodendron.workers.dev', /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_ISSUER)?env.ACCESS_ISSUER:'https://frosty-frog-d5d8.cloudflareaccess.com');
+      const login=new URL('/cdn-cgi/access/login/'+url.hostname, /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_ISSUER)?env.ACCESS_ISSUER:'https://frosty-frog-d5d8.cloudflareaccess.com');
       login.searchParams.set('kid',env.ACCESS_AUD);
       login.searchParams.set('redirect_url','/?command_login=1');
       const frontend=!path.startsWith('/api/')&&path!=='/api'&&['GET','HEAD'].includes(request.method);
