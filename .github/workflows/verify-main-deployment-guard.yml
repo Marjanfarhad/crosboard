@@ -16,17 +16,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Assert production deployment is main-push only
+      - name: Assert release is manual staging-only and fails closed
         run: |
           node --input-type=module - <<'JS'
           import assert from 'node:assert/strict';
           import {readFileSync} from 'node:fs';
           const src=readFileSync('.github/workflows/deploy-pages.yml','utf8');
-          assert.match(src,/^  push:\s*\n    branches: \[main\]/m);
-          assert.doesNotMatch(src,/^  workflow_dispatch:/m);
-          const expected = "    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified";
+          assert.match(src,/^  workflow_dispatch:\s*\n    inputs:/m);
+          assert.doesNotMatch(src,/^  push:/m);
+          assert.match(src,/      target:/);
+          assert.match(src,/      approval_phrase:/);
+          assert.match(src,/          - secure-staging/);
+          assert.doesNotMatch(src,/&& false/);
+          const expected = "    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.target == 'secure-staging' && inputs.approval_phrase == 'APPROVE-STAGING-ONLY' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'";
           for (const name of ['cloud','build','deploy']) {
-            assert.ok(src.includes('  '+name+':\n'+expected), name+' must require main push');
+            assert.ok(src.includes('  '+name+':\\n'+expected), name+' must require explicit staging-only dispatch');
           }
           assert.match(src,/Fail closed on missing staging prerequisites and paid AI/);
           assert.match(src,/test -n "\$COMMAND_STAGING_ALLOWED_EMAIL"/);
@@ -35,5 +39,5 @@ jobs:
           const guardPos=src.indexOf('Fail closed on missing staging prerequisites and paid AI');
           const provisionPos=src.indexOf('python3 provision.py');
           assert.ok(guardPos>=0 && provisionPos>guardPos,'preflight must precede provisioning');
-          console.log('PASS: main-push guard and staging preflight are present; no deployment triggered');
+          console.log('PASS: explicit manual staging gate and preflight are present; no deployment triggered');
           JS
