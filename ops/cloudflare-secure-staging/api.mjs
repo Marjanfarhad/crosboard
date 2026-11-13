@@ -35,7 +35,7 @@ export async function verifyIdentity(request,env,fetchKeys=fetch) {
     if(typeof claims.sub!=='string'||!claims.sub||claims.sub.length>256)throw new AccessIdentityError('AUTH_INVALID');
     if(!signingKeys){
       try{
-        const response=await fetchKeys(env.ACCESS_ISSUER+'/cdn-cgi/access/certs',{redirect:'error',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+        const response=await fetchKeys(env.ACCESS_ISSUER+'/cdn-cgi/access/certs',{redirect:'error',headers:{Accept:'application/json'},signal:AbortSignal.timeout?.(10000)});
         if(!response.ok)throw new Error('keys');
         signingKeys=(await response.json()).keys;
         if(!Array.isArray(signingKeys))throw new Error('keys');
