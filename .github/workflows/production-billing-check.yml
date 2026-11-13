@@ -77,3 +77,6 @@ jobs:
             console.log('KEY CHECK',host,r.status,r.headers.get('content-type'),d.keys?.map(k=>k.kid)??[]);
           }
           JS
+      - name: Locate production recovery evidence
+        run: |
+          curl -fsS 'https://api.github.com/repos/Marjanfarhad/crosboard/actions/runs?head_sha=9c1a2a81778e2a1a12147335d83888167b6342d9' | jq -c '.workflow_runs[] | {name,id,status,conclusion}'
