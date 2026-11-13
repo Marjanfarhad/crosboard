@@ -1,0 +1,40 @@
+name: Refresh production Access certificates
+on:
+  schedule:
+    - cron: '12,42 * * * *'
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+permissions: {}
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Refresh trusted Access public keys in production D1
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          const issuer = 'https://frosty-frog-d5d8.cloudflareaccess.com/cdn-cgi/access/certs';
+          const response = await fetch(issuer, {redirect:'error', headers:{Accept:'application/json'}});
+          assert.equal(response.status, 200);
+          const {keys} = await response.json();
+          assert.ok(Array.isArray(keys) && keys.length > 0);
+          for (const key of keys) {
+            assert.ok(key.kid && key.kty === 'RSA' && key.n && key.e && !key.d);
+            await crypto.subtle.importKey('jwk',key,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
+          }
+          const path = 'https://api.cloudflare.com/client/v4/accounts/c07d8b1ea34ea6df240f291062a5ec1f/d1/database/dd4f4317-d841-4ed9-a9d1-a8a6582b7ba4/query';
+          async function query(sql,params=[]) {
+            const r=await fetch(path,{method:'POST',headers:{Authorization:'Bearer '+process.env.CF_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
+            const data=await r.json();
+            assert.ok(r.ok && data.success, 'D1 public-key refresh failed: HTTP '+r.status);
+          }
+          await query('CREATE TABLE IF NOT EXISTS access_public_keys (issuer TEXT PRIMARY KEY, refreshed_at INTEGER NOT NULL, keys_json TEXT NOT NULL)');
+          await query('INSERT INTO access_public_keys VALUES (?, ?, ?) ON CONFLICT(issuer) DO UPDATE SET refreshed_at=excluded.refreshed_at,keys_json=excluded.keys_json WHERE excluded.refreshed_at >= access_public_keys.refreshed_at',[issuer,Date.now(),JSON.stringify(keys)]);
+          console.log('Refreshed',keys.length,'public verification keys');
+          JS
