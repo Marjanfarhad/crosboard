@@ -30,7 +30,7 @@ jobs:
           assert.doesNotMatch(src,/&& false/);
           const expected = "    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.target == 'secure-staging' && inputs.approval_phrase == 'APPROVE-STAGING-ONLY' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true'";
           for (const name of ['cloud','build','deploy']) {
-            assert.ok(src.includes('  '+name+':\\n'+expected), name+' must require explicit staging-only dispatch');
+            assert.ok(src.includes('  '+name+':\n'+expected), name+' must require explicit staging-only dispatch');
           }
           assert.match(src,/Fail closed on missing staging prerequisites and paid AI/);
           assert.match(src,/test -n "\$COMMAND_STAGING_ALLOWED_EMAIL"/);
