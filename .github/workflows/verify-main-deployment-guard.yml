@@ -46,7 +46,7 @@ jobs:
           assert.equal(production.vars.AI_ENABLED,'false','paid AI must be disabled');
           assert.equal(production.d1_databases[0].database_name,'command-production');
           assert.equal(production.d1_databases[0].database_id,'dd4f4317-d841-4ed9-a9d1-a8a6582b7ba4');
-          assert.notEqual(production.vars.ACCESS_AUD,'REPLACE_WITH_SEPARATE_PRODUCTION_ACCESS_AUD' === '' ? '' : '', 'production audience must not be empty');
+          assert.equal(production.vars.ACCESS_AUD,'REPLACE_WITH_SEPARATE_PRODUCTION_ACCESS_AUD','production audience must remain an explicit non-secret placeholder until Access exists');
           console.log('PASS: isolated production template is not exposed and keeps paid AI off');
           console.log('PASS: explicit manual staging gate and preflight are present; no deployment triggered');
           JS
