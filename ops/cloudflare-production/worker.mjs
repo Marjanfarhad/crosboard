@@ -10,7 +10,7 @@ export async function fetchProductionKeys(url, options, request = fetch) {
       const response = await request(endpoint, {
         headers: { Accept: 'application/json' },
         redirect: 'error',
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout?.(4000),
       });
       if (!response.ok) continue;
       const { keys } = await response.json();
@@ -24,4 +24,21 @@ export async function fetchProductionKeys(url, options, request = fetch) {
   throw new Error('Access signing keys unavailable');
 }
 
-export default createWorker(fetchProductionKeys);
+export default {
+  fetch(request, env) {
+    const readKeys = async (url, options) => {
+      if (url !== issuerKeys) throw new Error('Unexpected Access issuer');
+      let snapshot;
+      try {
+        snapshot = await env.DB.prepare(
+          'SELECT keys_json FROM access_public_keys WHERE issuer = ? AND refreshed_at BETWEEN ? AND ?'
+        ).bind(issuerKeys, Date.now() - 3600000, Date.now()).first();
+        if (snapshot) return Response.json({ keys: JSON.parse(snapshot.keys_json) });
+      } catch {
+        // The issuer endpoints also work when the database is unavailable.
+      }
+      return fetchProductionKeys(url, options);
+    };
+    return createWorker(readKeys).fetch(request, env);
+  },
+};
