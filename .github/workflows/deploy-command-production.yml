@@ -33,6 +33,19 @@ jobs:
           node ops/cloudflare-secure-staging/api.test.mjs
           node ops/cloudflare-secure-staging/worker.test.mjs
           node ops/cloudflare-secure-staging/ai.test.mjs
+      - name: Check production Access key recovery
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import { fetchProductionKeys } from './ops/cloudflare-production/worker.mjs';
+          const issuer = 'https://frosty-frog-d5d8.cloudflareaccess.com/cdn-cgi/access/certs';
+          const app = 'https://command-app-production.caring-philodendron.workers.dev/cdn-cgi/access/certs';
+          const direct = await (await fetchProductionKeys(issuer)).json();
+          const fallback = await (await fetchProductionKeys(issuer, {}, (url, init) => url === issuer ? new Response(null,{status:503}) : fetch(url, init))).json();
+          assert.deepEqual(direct.keys, fallback.keys);
+          await assert.rejects(fetchProductionKeys(issuer, {}, () => new Response('{}')));
+          await assert.rejects(fetchProductionKeys(app));
+          JS
       - name: Test browser cloud interactions
         env:
           VITE_COMMAND_CLOUD_SYNC: 'true'
