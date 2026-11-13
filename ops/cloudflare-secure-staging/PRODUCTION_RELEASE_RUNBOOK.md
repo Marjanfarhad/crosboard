@@ -8,6 +8,34 @@ Status (2026-11-13): **Secure staging can be manually authorized; production rem
 - The former hardcoded `&& false` was replaced by a staging-only `workflow_dispatch` gate. No push to `main` automatically deploys. All three jobs require `target=secure-staging`, `approval_phrase=APPROVE-STAGING-ONLY`, and repository variable `COMMAND_STAGING_DEPLOY_APPROVED_20261105=true`. This is **not** a production deployment authorization. The workflow can still run `provision.py` and change staging D1/Access if manually approved; therefore do not dispatch until backup/restore and ownership gates are met.
 - `provision.py` can create/update Access configuration and apply `schema.sql` to remote D1. Its schema uses `CREATE TABLE IF NOT EXISTS` but is **not** a backup.
 
+
+## Separate production environment design (prepared, NOT created)
+
+Read-only Cloudflare inventory on 2026-11-13: account `Caring Philodendron` (`c07d8b1ea34ea6df240f291062a5ec1f`) has Worker `command-app-secure-staging`, D1 `command-secure-staging`, and Access application `Command secure staging`. The existing deployment workflow targets staging exclusively. The account's actual paid/free billing entitlement and GitHub billing settings **were not verified**.
+
+Proposed isolated resources, subject to explicit cost and owner approval:
+
+| Resource | Proposed production name | Safety rule |
+| --- | --- | --- |
+| Worker | `command-app-production` | Never overwrite `command-app-secure-staging`; deploy only from a reviewed, production-specific workflow |
+| D1 | `command-production` | New empty D1 with separately applied schema; do not bind to `command-secure-staging` or import real staging user data by default |
+| Access | `Command production owner only` | Exact hostname `command-app-production.caring-philodendron.workers.dev`; deny-by-default, initially one verified owner email and separate production audience |
+| GitHub environment | `command-production` | Required reviewers / branch restriction; no staging credentials or deployment triggers reused |
+| AI | disabled | No paid model calls, secret propagation, or live AI until expressly approved |
+
+**Cost preflight:** Cloudflare documents a Free Workers allowance of 100,000 requests/day and up to 100 Workers, and D1 Free up to 10 databases and 5 GB of total storage. These are **plan limits, not proof this account has zero billing liability**. Confirm actual Cloudflare plan, existing resource utilization, any paid subscriptions, GitHub Actions billing, and spend safeguards *before* creating these resources. Do not enable paid plans, add payment methods, or allow overages.
+
+**Isolated production build sequence (not yet run):**
+1. Independently verify billing and account owner; reserve isolated names without provisioning anything. Verify the exact production owner email privately (never commit it), and the intended public hostname.
+2. Correct and retest staging code safely: current `provision.py` requires exactly one Access policy, while the live staging Access application currently has **two** allow policies. Therefore its remote provisioning step would fail on the current state; do not force the existing staging workflow.
+3. Verify full export to an independently stored SQL artifact and restore into a **separate isolated test DB**; local application-table SQLite restore does not cover the internal `_cf_KV` table or remote D1 restore.
+4. Create a dedicated production configuration and workflow that is **manual-only**, fail-closed for production resource IDs, owner approval, and `AI_ENABLED=false`. Never replace staging bindings through string substitution at deploy time.
+5. Provision a new empty production D1 and minimal Access app/Worker only after billing and security checks. Record immutable IDs privately and apply schema without copying account/user rows.
+6. Confirm anonymous requests redirect to Cloudflare Access; sign in with an authorized production owner; test user session, persistence, token expiry, and logout; test rollback by restoring the previous Worker version while retaining user data.
+7. Obtain explicit owner sign-off on the exact production target URL, costs, and any migration of user data before routing real traffic. A staging deployment is not production promotion.
+
+**Current release gates:** environment isolated = FAIL (not created); actual billing reviewed = UNKNOWN; full remote restore tested = FAIL; authorized login E2E = FAIL; recent GitHub CI = needs verification. No production dispatch or provisioning is authorized by this runbook.
+
 ## Pre-release checklist (record evidence, no secrets)
 1. Identify the actual **production** Worker hostname, Access application and D1 UUID. Confirm they are intentionally distinct from staging, or document an explicit promotion plan. Do not assume a staging hostname is production.
 2. Verify GitHub Actions repository variable `COMMAND_STAGING_DEPLOY_APPROVED_20261105` and `COMMAND_STAGING_ALLOWED_EMAIL` via an authorized admin. Record only presence/boolean, not secrets.
