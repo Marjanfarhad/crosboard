@@ -1,0 +1,25 @@
+{
+  "name": "command-app-production",
+  "main": "../cloudflare-secure-staging/worker.mjs",
+  "compatibility_date": "2026-11-03",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "ACCESS_ISSUER": "https://frosty-frog-d5d8.cloudflareaccess.com",
+    "ACCESS_AUD": "REPLACE_WITH_SEPARATE_PRODUCTION_ACCESS_AUD",
+    "AI_ENABLED": "false"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "command-production",
+      "database_id": "dd4f4317-d841-4ed9-a9d1-a8a6582b7ba4"
+    }
+  ]
+}
