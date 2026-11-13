@@ -67,3 +67,16 @@ test('signing-key failures return a service error without a login redirect',asyn
  const response=await unavailable.fetch(await request('/',true),f.env);
  assert.equal(response.status,503);assert.equal(response.headers.get('location'),null);assert.match(await response.text(),/AUTH_KEYS_UNAVAILABLE/);
 });
+
+test('Access login follows each isolated Worker hostname, not the staging hostname',async()=>{
+  const f=fixture();
+  for(const hostname of ['command-app-production.caring-philodendron.workers.dev','command-app-secure-staging.caring-philodendron.workers.dev']){
+    const request=new Request('https://'+hostname+'/');
+    const response=await worker.fetch(request,f.env);
+    assert.equal(response.status,302);
+    const login=new URL(response.headers.get('location'));
+    assert.equal(login.pathname,'/cdn-cgi/access/login/'+hostname);
+    assert.equal(login.searchParams.get('kid'),f.env.ACCESS_AUD);
+  }
+  assert.equal(f.assetCalls,0);
+});
