@@ -1,0 +1,111 @@
+name: Command isolated production release
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/deploy-command-production.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: command-production-release
+  cancel-in-progress: false
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Check credential, typecheck and unit tests
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$CF_TOKEN" || { echo "::error::Missing Cloudflare token"; exit 1; }
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm test
+          node ops/cloudflare-secure-staging/api.test.mjs
+          node ops/cloudflare-secure-staging/worker.test.mjs
+          node ops/cloudflare-secure-staging/ai.test.mjs
+      - name: Test browser cloud interactions
+        env:
+          VITE_COMMAND_CLOUD_SYNC: 'true'
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test --config playwright.cloud.config.ts
+      - name: Build complete React app
+        env:
+          VITE_COMMAND_CLOUD_SYNC: 'true'
+        run: pnpm build:static
+      - name: Verify production Access, owner-only policy, Worker and isolated D1
+        id: access
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          account='c07d8b1ea34ea6df240f291062a5ec1f'
+          host='command-app-production.caring-philodendron.workers.dev'
+          def get(path):
+            request=urllib.request.Request('https://api.cloudflare.com/client/v4/accounts/'+account+path,headers={'Authorization':'Bearer '+os.environ['CF_TOKEN']})
+            with urllib.request.urlopen(request,timeout=30) as f: response=json.load(f)
+            assert response.get('success'), 'Cloudflare response failed'
+            return response['result']
+          a=get('/access/apps/bd8babc7-75d1-42fe-a0f1-bed1bdaeaf10')
+          policies=get('/access/apps/bd8babc7-75d1-42fe-a0f1-bed1bdaeaf10/policies')
+          workers=get('/workers/workers?per_page=100')
+          databases=get('/d1/database?per_page=100')
+          w=[x for x in workers if x.get('name')=='command-app-production']
+          assert len(w)==1
+          assert a['domain']==host and a['type']=='self_hosted' and a.get('aud')
+          assert any(x.get('type')=='worker' and x.get('worker_id')==w[0]['id'] for x in a.get('destinations',[]))
+          assert len(policies)==1 and policies[0].get('name')=='Production owner only' and policies[0].get('decision')=='allow'
+          assert len(policies[0].get('include',[]))==1 and set(policies[0]['include'][0])=={'email'}
+          assert not policies[0].get('exclude') and not policies[0].get('require')
+          assert len([d for d in databases if d.get('name')=='command-production' and d.get('uuid')=='dd4f4317-d841-4ed9-a9d1-a8a6582b7ba4'])==1
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('aud='+a['aud']+'\n')
+          print('PASS: separate production infrastructure and owner-only Access')
+          PY
+      - name: Deploy complete app and static assets to production
+        working-directory: ops/cloudflare-production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: c07d8b1ea34ea6df240f291062a5ec1f
+          PRODUCTION_AUD: ${{ steps.access.outputs.aud }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          c=json.loads(Path('wrangler.example.json').read_text())
+          assert c['name']=='command-app-production'
+          assert c['d1_databases'][0]['database_id']=='dd4f4317-d841-4ed9-a9d1-a8a6582b7ba4'
+          assert c['vars']['AI_ENABLED']=='false'
+          c['vars']['ACCESS_AUD']=os.environ['PRODUCTION_AUD']
+          c['workers_dev']=True
+          c['preview_urls']=False
+          Path('wrangler.json').write_text(json.dumps(c,indent=2))
+          PY
+          mkdir -p public
+          cp -a ../../dist/public/. public/
+          npx --yes wrangler@4 deploy --dry-run --config wrangler.json
+          npx --yes wrangler@4 deploy --config wrangler.json
+      - name: Verify anonymous requests are intercepted by Access
+        run: |
+          node --input-type=module - <<'JS'
+          const url='https://command-app-production.caring-philodendron.workers.dev/';
+          let ok=false;
+          for(let i=0;i<10;i++){
+            const r=await fetch(url,{redirect:'manual'});
+            const target=r.headers.get('location')||'';
+            if([301,302,303,307,308].includes(r.status)&&new URL(target,url).hostname.endsWith('.cloudflareaccess.com')){ok=true;break;}
+            await new Promise(resolve=>setTimeout(resolve,5000));
+          }
+          if(!ok)throw new Error('Production Access check failed');
+          console.log('PASS: production Access intercepted anonymous request');
+          JS
