@@ -4,6 +4,21 @@ patchedDependencies:
   wouter@3.7.1: patches/wouter@3.7.1.patch
 overrides:
   tailwindcss>nanoid: 3.3.7
+  # Security remediation for production transitive dependency findings.
+  fast-xml-parser: 5.5.6
+  proxy-addr: 2.0.8
+  axios: 1.20.0
+  mysql2: 3.22.0
+  form-data: 4.0.6
+  body-parser: 1.20.9
+  # Global patches are safe here because all installed versions use these major releases.
+  brace-expansion: 2.1.6
+  dompurify@3.3.0: 3.4.17
+  ip-address: 10.3.1
+  lodash@4.17.21: 4.18.0
+  lodash-es@4.17.21: 4.18.0
+  path-to-regexp@0.1.12: 0.1.13
+  picomatch: 4.0.4
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
   - esbuild

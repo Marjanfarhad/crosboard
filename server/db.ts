@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { authSessions, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,3 +89,27 @@ export async function getUserByOpenId(openId: string) {
 }
 
 // TODO: add feature queries here as your schema grows.
+
+/** Only hashed JWT identifiers are stored. These operations require the sessions table. */
+export async function persistAuthSession(idHash: string, openId: string, expiresAt: Date): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Session database unavailable");
+  await db.insert(authSessions).values({ idHash, openId, expiresAt });
+}
+
+export async function isAuthSessionActive(idHash: string, openId: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Session database unavailable");
+  const matches = await db.select({ idHash: authSessions.idHash }).from(authSessions)
+    .where(and(eq(authSessions.idHash, idHash), eq(authSessions.openId, openId),
+      isNull(authSessions.revokedAt), gt(authSessions.expiresAt, sql`CURRENT_TIMESTAMP`)))
+    .limit(1);
+  return matches.length === 1;
+}
+
+export async function revokeAuthSession(idHash: string, openId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Session database unavailable");
+  await db.update(authSessions).set({ revokedAt: new Date() })
+    .where(and(eq(authSessions.idHash, idHash), eq(authSessions.openId, openId), isNull(authSessions.revokedAt)));
+}

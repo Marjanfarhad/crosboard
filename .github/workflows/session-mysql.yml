@@ -1,0 +1,58 @@
+name: Session MySQL integration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - server/**
+      - shared/**
+      - drizzle/schema.ts
+      - docs/sql/auth-sessions-staging.sql
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/session-mysql.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-mysql-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: disposable-root-only
+          MYSQL_DATABASE: crosboard_session_ci
+          MYSQL_USER: session_ci
+          MYSQL_PASSWORD: disposable-session-ci-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pdisposable-root-only"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm check
+      - name: Exercise actual database-backed application session path
+        env:
+          CROSBOARD_SESSION_MYSQL_TEST: '1'
+          DATABASE_URL: mysql://session_ci:disposable-session-ci-only@127.0.0.1:3306/crosboard_session_ci
+        run: pnpm exec vitest run server/auth.mysql.integration.test.ts --reporter=verbose

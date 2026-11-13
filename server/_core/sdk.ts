@@ -4,6 +4,7 @@ import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
+import { createHash, randomUUID } from "node:crypto";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
@@ -17,6 +18,9 @@ import type {
 // Utility function
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
+
+const hashSessionId = (jti: string): string =>
+  createHash("sha256").update(jti).digest("hex");
 
 export type SessionPayload = {
   openId: string;
@@ -168,14 +172,27 @@ class SDKServer {
     openId: string,
     options: { expiresInMs?: number; name?: string } = {}
   ): Promise<string> {
-    return this.signSession(
-      {
-        openId,
-        appId: ENV.appId,
-        name: options.name || "",
-      },
-      options
-    );
+    if (!isNonEmptyString(openId) || !isNonEmptyString(ENV.appId)) {
+      throw new Error("Session identity or project is missing");
+    }
+    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
+    if (!Number.isFinite(expiresInMs) || expiresInMs <= 0) {
+      throw new Error("Invalid session expiration");
+    }
+    const jti = randomUUID();
+    const expirationSeconds = Math.floor((Date.now() + expiresInMs) / 1000);
+    const token = await new SignJWT({
+      openId,
+      appId: ENV.appId,
+      name: options.name || "",
+    })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setJti(jti)
+      .setExpirationTime(expirationSeconds)
+      .sign(this.getSessionSecret());
+    // Persistence must succeed before the cookie can be issued.
+    await db.persistAuthSession(hashSessionId(jti), openId, new Date(expirationSeconds * 1000));
+    return token;
   }
 
   async signSession(
@@ -211,26 +228,44 @@ class SDKServer {
         algorithms: ["HS256"],
         requiredClaims: ["exp"],
       });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+      const { openId, appId, name, jti } = payload as Record<string, unknown>;
 
       if (
         !isNonEmptyString(openId) ||
-        (!isNonEmptyString(appId) || appId !== ENV.appId) ||
+        !isNonEmptyString(appId) || appId !== ENV.appId ||
         typeof name !== "string"
       ) {
         console.warn("[Auth] Session payload missing required fields");
         return null;
       }
 
-      return {
-        openId,
-        appId,
-        name,
-      };
+      // Legacy scheduled-job tokens are verified by Manus on every scheduled call.
+      // Interactive sessions require a previously issued, unrevoked DB record.
+      if (!openId.startsWith(CRON_OPEN_ID_PREFIX)) {
+        if (!isNonEmptyString(jti)) return null;
+        if (!(await db.isAuthSessionActive(hashSessionId(jti), openId))) return null;
+      }
+
+      return { openId, appId, name };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
+  }
+
+  /** Logout revokes interactive sessions server-side; it never trusts unsigned claims. */
+  async revokeSessionToken(cookieValue: string | undefined | null): Promise<void> {
+    if (!cookieValue) return;
+    const { payload } = await jwtVerify(cookieValue, this.getSessionSecret(), {
+      algorithms: ["HS256"],
+      requiredClaims: ["exp", "jti"],
+    });
+    const { openId, appId, jti } = payload as Record<string, unknown>;
+    if (!isNonEmptyString(openId) || !isNonEmptyString(jti) ||
+        appId !== ENV.appId || openId.startsWith(CRON_OPEN_ID_PREFIX)) {
+      throw ForbiddenError("Invalid interactive session");
+    }
+    await db.revokeAuthSession(hashSessionId(jti), openId);
   }
 
   async getUserInfoWithJwt(

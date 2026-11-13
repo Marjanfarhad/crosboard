@@ -2,11 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { publicPlatformConfig, publicPlatformScript } from "./_core/publicConfig";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { sdk } from "./_core/sdk";
+import * as db from "./db";
 import { listLLMModels } from "./_core/llm";
 import { generateImage } from "./_core/imageGeneration";
 import { COOKIE_NAME } from "../shared/const";
 
-afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("current platform integration", () => {
   it("exposes only named public runtime configuration", () => {
     const env = { MANUS_PROJECT_ID: "project-test", MANUS_API_KEY: "server-only-test", MANUS_JWT_SECRET: "signing-only-test", DATABASE_URL: "db-only-test", MANUS_API_BROWSER_KEY: "public-browser-test", MANUS_ANALYTICS_ENDPOINT: "https://analytics.example", MANUS_ANALYTICS_WEBSITE_ID: "site-test" };
@@ -46,8 +47,11 @@ describe("current platform integration", () => {
   it("binds signed app sessions to this project and accepts an empty display name", async () => {
     vi.stubEnv("MANUS_PROJECT_ID", "project-test");
     vi.stubEnv("MANUS_JWT_SECRET", "unit-test-signing-key-never-deployed");
-    const token = await sdk.signSession({ openId: "user-test", appId: "project-test", name: "" });
+    vi.spyOn(db, "persistAuthSession").mockResolvedValue();
+    vi.spyOn(db, "isAuthSessionActive").mockResolvedValue(true);
+    const token = await sdk.createSessionToken("user-test", { name: "" });
     expect(await sdk.verifySession(token)).toMatchObject({ openId: "user-test" });
+    expect(db.persistAuthSession).toHaveBeenCalledTimes(1);
     vi.stubEnv("MANUS_PROJECT_ID", "different-project");
     expect(await sdk.verifySession(token)).toBeNull();
   });
