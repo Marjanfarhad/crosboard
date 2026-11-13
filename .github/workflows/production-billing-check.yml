@@ -58,3 +58,13 @@ jobs:
                   failed = True
           raise SystemExit(int(failed))
           PY
+      - name: Verify anonymous production API requests require owner login
+        run: |
+          node --input-type=module - <<'JS'
+          for (const path of ['/api/account', '/api/workspace']) {
+            const response = await fetch('https://command-app-production.caring-philodendron.workers.dev' + path, {redirect:'manual'});
+            const host = new URL(response.headers.get('location') || '/', response.url).hostname;
+            console.log(path, response.status, host);
+            if (![301,302,303,307,308].includes(response.status) || host !== 'frosty-frog-d5d8.cloudflareaccess.com') process.exitCode = 1;
+          }
+          JS
