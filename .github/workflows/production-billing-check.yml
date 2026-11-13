@@ -68,3 +68,12 @@ jobs:
             if (![301,302,303,307,308].includes(response.status) || host !== 'frosty-frog-d5d8.cloudflareaccess.com') process.exitCode = 1;
           }
           JS
+      - name: Compare Access signing key endpoints
+        run: |
+          node --input-type=module - <<'JS'
+          for (const host of ['frosty-frog-d5d8.cloudflareaccess.com','command-app-production.caring-philodendron.workers.dev']) {
+            const r = await fetch('https://' + host + '/cdn-cgi/access/certs', {redirect:'manual',headers:{Accept:'application/json'}});
+            const d = await r.json().catch(()=>({}));
+            console.log('KEY CHECK',host,r.status,r.headers.get('content-type'),d.keys?.map(k=>k.kid)??[]);
+          }
+          JS
