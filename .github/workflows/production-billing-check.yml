@@ -50,7 +50,7 @@ jobs:
                   if label == 'Subscriptions':
                       print(label, [(x.get('rate_plan', {}).get('public_name'), x.get('price'), x.get('state')) for x in result])
                   elif label == 'Workers usage':
-                      print(label, 'requests reported today UTC:', sum(x.get('workersRequests', 0) for x in result), 'observations:', len(result))
+                      print(label, json.dumps(result)[:3000])
                   else:
                       print(label, 'read succeeded')
               except urllib.error.HTTPError as error:
