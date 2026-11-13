@@ -21,6 +21,18 @@ jobs:
           base = 'https://api.cloudflare.com/client/v4/accounts/c07d8b1ea34ea6df240f291062a5ec1f'
           today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
           query = urlencode({'metrics':'workersRequests', 'since':today.isoformat(), 'time_delta':'hour'})
+          token = os.environ['CF_TOKEN']
+          print('Credential present:', bool(token))
+          print('Surrounding whitespace:', token != token.strip())
+          for label, url in [('User token', 'https://api.cloudflare.com/client/v4/user/tokens/verify'), ('Account token', base + '/tokens/verify')]:
+              req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token.strip()})
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      data = json.load(response)
+                  print(label, 'status:', data.get('result', {}).get('status'))
+              except urllib.error.HTTPError as error:
+                  codes = [item.get('code') for item in json.load(error).get('errors', [])]
+                  print(label, 'HTTP', error.code, 'Cloudflare codes', codes)
           checks = {
               'Production Access': '/access/apps/bd8babc7-75d1-42fe-a0f1-bed1bdaeaf10',
               'Subscriptions': '/subscriptions',
@@ -28,7 +40,7 @@ jobs:
           }
           failed = False
           for label, path in checks.items():
-              req = urllib.request.Request(base + path, headers={'Authorization': 'Bearer ' + os.environ['CF_TOKEN']})
+              req = urllib.request.Request(base + path, headers={'Authorization': 'Bearer ' + token.strip()})
               try:
                   with urllib.request.urlopen(req, timeout=20) as response:
                       data = json.load(response)
