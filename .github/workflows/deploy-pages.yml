@@ -1,8 +1,18 @@
 name: Deploy CROS to GitHub Pages
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Only the existing secure staging Worker is supported'
+        required: true
+        type: choice
+        options:
+          - secure-staging
+      approval_phrase:
+        description: 'Explicit staging-only authorization; never a production approval'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,7 +25,7 @@ concurrency:
 
 jobs:
   cloud:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.target == 'secure-staging' && inputs.approval_phrase == 'APPROVE-STAGING-ONLY' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' # Manual secure-staging only; not production
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -117,7 +127,7 @@ jobs:
           JS
 
   build:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.target == 'secure-staging' && inputs.approval_phrase == 'APPROVE-STAGING-ONLY' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' # Manual secure-staging only; not production
     needs: cloud
     runs-on: ubuntu-latest
     steps:
@@ -193,7 +203,7 @@ jobs:
           path: dist/public
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' && false # HOLD: production resources, D1 backup and rollback unverified
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.target == 'secure-staging' && inputs.approval_phrase == 'APPROVE-STAGING-ONLY' && vars.COMMAND_STAGING_DEPLOY_APPROVED_20261105 == 'true' # Manual secure-staging only; not production
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
