@@ -1,5 +1,7 @@
 export const COOKIE_NAME = "webdev_app_session";
 export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
+// New interactive OAuth sessions should be short-lived; existing signed sessions remain valid until exp.
+export const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
 export const AXIOS_TIMEOUT_MS = 30_000;
 export const UNAUTHED_ERR_MSG = 'Please login (10001)';
 export const NOT_ADMIN_ERR_MSG = 'You do not have required permission (10002)';

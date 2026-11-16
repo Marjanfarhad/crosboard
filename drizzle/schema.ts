@@ -26,3 +26,15 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // TODO: Add your tables here
+/**
+ * Issued interactive JWT sessions. The raw JWT and raw jti are never persisted.
+ * Only its SHA-256 fingerprint is stored. Old tokens lacking a database row fail closed.
+ */
+export const authSessions = mysqlTable("auth_sessions", {
+  idHash: varchar("idHash", { length: 64 }).primaryKey(),
+  openId: varchar("openId", { length: 64 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  revokedAt: timestamp("revokedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AuthSession = typeof authSessions.$inferSelect;

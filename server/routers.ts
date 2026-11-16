@@ -1,4 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
+import { parse as parseCookieHeader } from "cookie";
+import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
@@ -8,12 +10,19 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      const cookies = parseCookieHeader(ctx.req.headers.cookie ?? "");
+      const auth = ctx.req.headers.authorization;
+      const token = cookies[COOKIE_NAME] ??
+        (typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7) : undefined);
+      try {
+        // If persistence fails, do not report successful server-side logout.
+        await sdk.revokeSessionToken(token);
+      } finally {
+        ctx.res.clearCookie(COOKIE_NAME, cookieOptions);
+      }
+      return { success: true } as const;
     }),
   }),
 

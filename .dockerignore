@@ -1,7 +1,31 @@
+# Dependencies and build outputs
 node_modules
 dist
+coverage
+playwright-report
+test-results
+artifacts
+.cache
+.pnpm-store
+
+# Repository internals and local environment
 .git
+.github
 .env
 .env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+
+# Local tooling, editor files, and logs
 .manus-logs
 *.manus-starter-*
+*.log
+.DS_Store
+.vscode
+.idea
