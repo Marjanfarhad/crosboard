@@ -1,5 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
+import { TRPCError } from "@trpc/server";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 
@@ -8,12 +10,26 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      const tokens = sdk.sessionTokensFromRequest(ctx.req);
+      if (!tokens.length || !ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+      try {
+        // Persist revocation BEFORE clearing the browser cookie.
+        // Revoke both cookie and preview Bearer sessions when supplied.
+        // Never revoke a different user\'s token merely because it was attached.
+        for (const token of tokens) {
+          const session = await sdk.verifySession(token);
+          if (!session || session.openId !== ctx.user.openId) {
+            throw new Error("Session mismatch or already invalid");
+          }
+        }
+        await sdk.revokeSessionTokensAtomically(tokens);
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Logout could not invalidate the session" });
+      }
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      ctx.res.clearCookie(COOKIE_NAME, cookieOptions);
+      return { success: true } as const;
     }),
   }),
 
