@@ -1,0 +1,32 @@
+name: Cloudflare static build verification
+on:
+  push:
+    branches: [chore/cloudflare-free-readiness]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build:cloudflare
+      - name: Verify root paths and output
+        run: |
+          test -s dist/public/index.html
+          if grep -q '/crosboard/assets/' dist/public/index.html; then echo 'Unexpected GitHub Pages asset prefix'; exit 1; fi
+          test -d dist/public/assets
+      - name: Check for obvious secret exposure
+        run: |
+          if grep -R -E '(-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----)' dist/public; then echo 'Private key found in static output'; exit 1; fi
