@@ -1,8 +1,5 @@
 name: Command isolated production release
 on:
-  push:
-    branches: [main]
-    paths: [.github/workflows/deploy-command-production.yml]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,9 +8,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   refresh-keys:
+    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/refresh-production-access-keys.yml
     secrets: inherit
   production:
+    if: github.ref == 'refs/heads/main'
     needs: refresh-keys
     runs-on: ubuntu-latest
     timeout-minutes: 30
